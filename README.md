@@ -1,10 +1,7 @@
 # Weak-Driven Learning
 
-## 更新日志
-
-- **2026-02-03**：重写 README，使其与论文 Introduction 一致，突出 WAMSAS 原则、三阶段训练流程与 logit mixing 机制；更新方法示意图与结果图。
-- **2026-02-02**：整理代码结构，精简 Trainer 相关实现，更新 `utils/fuse_models.py`，统一 Weak-Driven Learning 训练/评测 Pipeline。
-- **2026-02-01**：开源 Weak-Driven Learning 初版代码与脚本，支持一键运行完整多阶段训练 Pipeline。
+## Update Log
+- **2026-02-01**：Update Code 
 
 **Weak Agents can Make Strong Agents Stronger (WAMSAS)**
 
@@ -74,10 +71,8 @@ cd Weak-Driven-Learning
 conda create -n weak_driven python=3.10
 conda activate weak_driven
 
-# Install dependencies
-pip install torch transformers accelerate deepspeed
-pip install vllm  # For evaluation
-# Add other dependencies as needed
+# Install all dependencies from requirements.txt
+pip install -r requirements.txt
 ```
 
 3. **Configure training parameters**
