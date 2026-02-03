@@ -219,84 +219,6 @@ Weak-Driven Learning is implemented as a modular system with clear separation of
    - Uses vLLM for efficient inference
    - Outputs results to `results/` directory
 
-## Configuration
-
-### Training Configuration
-
-Key parameters in `scripts/run_ensemble.sh`:
-
-```bash
-# GPU Configuration
-GPU_USE=0,1,2,3,4,5,6,7
-
-# Model and Data Paths
-base_model="Qwen/Qwen3-4B-Base"  # Base model (will serve as weak agent)
-stage1_data_path="/path/to/stage1_data.jsonl"
-data_files="/path/to/data.jsonl"
-outdir="weights/ensemble/Qwen3-4B-Base"
-
-# Training Hyperparameters
-stage1_epochs=1      # Phase 2: Curriculum learning
-stage3_epochs=1      # Phase 3: Joint training
-per_device_train_batch_size=4
-gradient_accumulation_steps=4
-max_seq_length=2048
-
-# Entropy-based Weighted Sampling (BrownBoost Parameters)
-alpha=0.1
-beta=0.8
-```
-
-### Data Format
-
-**Stage 1 Data** (JSONL format):
-```json
-{"instruction": "...", "output": "..."}
-```
-
-**Stage 2/3 Data** (JSONL format):
-```json
-{"idx": 0, "instruction": "...", "output": "..."}
-```
-
-**Entropy Files** (JSONL format):
-```json
-{"idx": 0, "entropy_0": 2.5, "entropy_1": 2.1, ...}
-```
-
-## Common Issues and Troubleshooting
-
-### Error: `No module named 'utils'`
-
-**Cause**: Not running from project root directory, or Python path doesn't include project root.
-
-**Solution**:
-- Always `cd` to the project root directory before running scripts:
-  ```bash
-  cd "/path/to/Weak-Driven-Learning"
-  ```
-- The `scripts/run_ensemble.sh` uses relative paths. Don't run scripts from other directories.
-
-### Error: `python: command not found`
-
-**Cause**: System doesn't have `python` symlink.
-
-**Solution**: Use `python3` or activate your conda environment where `python` is available.
-
-### Error: GPU Out of Memory
-
-**Solution**: Adjust the following parameters:
-- Reduce `per_device_train_batch_size`
-- Increase `gradient_accumulation_steps`
-- Reduce `max_seq_length`
-- Use fewer GPUs (modify `GPU_USE`)
-
-### Error: Cannot locate Qwen3ForEnsemble
-
-**Cause**: `EnsembleQwen3/` directory missing or Python path incorrect.
-
-**Solution**: Ensure `EnsembleQwen3/` exists and is in the Python path.
-
 ## Evaluation Results
 
 Evaluation results are saved to the `results/` directory (if configured in the evaluation script). Training logs are written to `logs/`.
@@ -308,42 +230,6 @@ Example results visualization:
 <p align="center">
   <img src="pics/结果图.png" alt="Evaluation Results" width="600"/>
 </p>
-
-## Advanced Usage
-
-### Running Individual Stages
-
-You can run individual stages by modifying `scripts/run_ensemble.sh` or calling the Python scripts directly:
-
-```bash
-# Compute entropy only
-python ensemble/run_entropy.py --model-path <path> --data-path <path>
-
-# Train Stage 1 only (Phase 2: Curriculum Learning)
-python ensemble/ensemble_train.py --stage 1 --model-name <model> --stage1-data-path <path>
-
-# Joint training (Phase 3)
-python ensemble/ensemble_train.py --stage 3 --model-name <model> --data-files <path>
-
-# Extract enhanced sub-model
-python ensemble/extract_submodel.py --ensemble-path <path> --submodel-idx 0
-```
-
-### Custom Model Types
-
-To add support for new model types:
-
-1. Add model definition to `EnsembleQwen3/` or create a new model directory
-2. Add fusion logic to `utils/fuse_models.py` (implement logit mixing)
-3. Update `ensemble/ensemble_train.py` to support the new type
-
-### Understanding Logit Mixing
-
-The core mechanism of weak-driven learning is logit mixing during joint training. This compels the strong model to:
-- Observe weak model predictions on the same inputs
-- Identify failure modes and incorrect reasoning paths
-- Explicitly distance itself from these failure modes
-- Maintain meaningful gradients even when standard supervision saturates
 
 ## Theoretical Insights
 
@@ -365,20 +251,3 @@ Our gradient-level analysis demonstrates that:
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Citation
-
-If you find Weak-Driven Learning useful, please consider citing our work:
-
-```bibtex
-@article{weak-driven-learning,
-  title={Weak-Driven Learning: Weak Agents can Make Strong Agents Stronger},
-  author={Your Name and Co-authors},
-  journal={Conference/Journal Name},
-  year={2025}
-}
-```
-
----
-
-For detailed setup instructions, see [SETUP.md](SETUP.md).  
-For a quick start guide, see [QUICKSTART.md](QUICKSTART.md).
