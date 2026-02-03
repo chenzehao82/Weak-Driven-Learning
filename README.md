@@ -75,17 +75,34 @@ conda activate weak_driven
 pip install -r requirements.txt
 ```
 
-3. **Configure training parameters**
+3. **Prepare training data (AM-DeepSeek-R1 Distilled)**
+
+We provide a data processing script to filter and reformat the AM-DeepSeek-R1-Distilled dataset:
+
+```bash
+cd "/root/buaa/czh/Weak-Driving Learning/dataprocess"
+python am_deepseek_r1_distilled.py
+```
+
+This will generate:
+- `am_deepseek_r1_filtered_ad.jsonl` — main training data (with `idx` field)
+- `am_deepseek_r1_filtered_ad_test_1000.jsonl` — a 1K-sample test subset
+
+By default, `scripts/run_ensemble.sh` uses:
+- `stage1_data_path="/root/buaa/czh/Weak-Driving Learning/dataprocess/am_deepseek_r1_filtered_ad.jsonl"`
+- `data_files="/root/buaa/czh/Weak-Driving Learning/dataprocess/am_deepseek_r1_filtered_ad.jsonl"`
+
+You can modify these paths if you place the processed data elsewhere.
+
+4. **Configure training parameters**
 
 Edit `scripts/run_ensemble.sh` and modify:
 - `GPU_USE`: GPU device IDs (e.g., `0,1,2,3,4,5,6,7`)
 - `base_model`: Base model path (e.g., `Qwen/Qwen3-4B-Base`)
-- `stage1_data_path`: Path to Stage 1 training data (JSONL format)
-- `data_files`: Path to training data for subsequent stages
 - `outdir`: Output directory for checkpoints
 - Training hyperparameters (epochs, batch size, gradient accumulation, max sequence length, etc.)
 
-4. **Run the complete pipeline**
+5. **Run the complete pipeline**
 
 ```bash
 # Important: Run from project root directory

@@ -37,8 +37,9 @@ export CUDA_VISIBLE_DEVICES=$GPU_USE
 # 模型和数据路径配置
 outdir="../weights/ensemble/Qwen3-4B-Base"
 base_model="Qwen/Qwen3-4B-Base"
-stage1_data_path="/root/buaa/czh/dataset/am_deepseek_r1_filtered_ad.jsonl"
-data_files="/root/buaa/czh/dataset/am_deepseek_r1_filtered_ad.jsonl"
+# 默认使用本仓库 dataprocess 脚本生成的数据
+stage1_data_path="/root/buaa/czh/Weak-Driving Learning/dataprocess/am_deepseek_r1_filtered_ad.jsonl"
+data_files="/root/buaa/czh/Weak-Driving Learning/dataprocess/am_deepseek_r1_filtered_ad.jsonl"
 
 # 训练参数配置
 stage1_epochs=1
