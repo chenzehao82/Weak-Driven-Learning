@@ -1,37 +1,47 @@
 # Weak-Driven Learning
 
-Weak-Driven Learning leverages entropy-based weighted sampling and ensemble model fusion to train powerful language models through multi-stage training pipelines. This framework provides a **one-command** training pipeline that automatically trains and fuses sub-models, extracts the enhanced sub-model, and evaluates its performance.
+**Weak Agents can Make Strong Agents Stronger (WAMSAS)**
 
-The project follows the modular design principles of [RAGEN](https://github.com/mll-lab-nu/RAGEN) with a "modular + scripted pipeline + clear documentation" approach.
+Weak-Driven Learning is a novel post-training paradigm that challenges the conventional assumption that learning with weaker models necessarily degrades performance. Instead, we show that weak agents (such as historical model checkpoints) can provide informative error signals that continue to drive improvement even when standard supervision saturates.
 
 ## Overview
 
-Weak-Driven Learning implements a multi-stage training framework that:
+The dominant post-training paradigms, including Supervised Fine-Tuning (SFT), Knowledge Distillation (KD), and Curriculum Learning, share a common principle: learning from stronger supervision signals. While highly effective during early training, such paradigms increasingly suffer from **performance saturation** as optimization proceeds. Specifically, the logit margin—the gap between the target logit and average non-target logits—grows rapidly in early epochs but stabilizes thereafter. Once this margin saturates, gradients induced by standard supervised objectives diminish, limiting further improvement.
 
-- **Trains ensemble models** using Weighted Model Selection and Synthesis (WMSS)
-- **Applies entropy-based weighted sampling** inspired by BrownBoost to focus training on challenging samples
-- **Automatically extracts and evaluates** the enhanced sub-model after training
+**Weak-Driven Learning** approaches this challenge from a fundamentally different perspective. Inspired by human collaborative problem-solving, where a strong individual working alongside a weaker teammate is often forced to further refine their reasoning by observing and correcting the weaker teammate's mistakes, we formalize the principle that **weak agents can make strong agents stronger**.
 
-### Core Concepts
+Unlike knowledge distillation, which depends on access to a stronger teacher that is often expensive or unavailable, weak-driven learning leverages weak reference models that are easy to obtain, such as historical checkpoints of the model itself. By explicitly identifying and distancing the strong model from weak model failure modes, learning can continue beyond the saturation point of standard supervision.
 
-- **WMSS (Weighted Model Selection and Synthesis)**: A unified naming for the "vote" fusion method that combines multiple sub-models with learned weights
-- **Entropy-based Weighted Sampling**: Uses entropy differences across training stages to assign weights and resample training data, improving subsequent stage performance
-- **Multi-stage Training Pipeline**: A three-stage process that progressively refines model capabilities through entropy-guided training
+### Key Contributions
+
+- **Learning Paradigm**: We introduce *Weak-Driven Learning*, a new post-training paradigm that highlights the overlooked role of weak agents—such as historical model checkpoints—as driving signals that can further improve strong agents.
+
+- **Training Framework**: We propose a practical post-training framework that operationalizes weak-driven learning through joint optimization of weak and strong models via logit mixing. This mechanism compels the strong model to refine its decision boundary and sustain meaningful gradients in saturated regimes, **without additional inference overhead**.
+
+- **Theoretical Analysis**: We provide a gradient-level analysis of the joint training mechanism, theoretically demonstrating how incorporating weak-model logits reshapes the optimization landscape, prevents gradient vanishing on non-target tokens, and maintains effective learning pressure beyond standard supervision.
+
+- **Empirical Performance**: We empirically demonstrate consistent improvements on challenging benchmarks, including mathematical reasoning and code generation, compared to standard SFT baselines.
 
 ## Framework Overview
 
-The following diagram illustrates the overall paradigm of Weak-Driven Learning:
+The following diagram illustrates the paradigm comparison between Distillation-Based Learning and Weak-Driven Learning:
 
 <p align="center">
   <img src="pics/weak-drivenlearning.png" alt="Weak-Driven Learning Framework" width="800"/>
 </p>
 
-## Model Architecture
+## Method
 
-The model architecture diagram shows the ensemble structure:
+Our framework has three phases:
+
+1. **Initialization**: Prepare the base model and initial training data
+2. **Activate SFT Data via Curriculum Learning**: Train the first-stage model using entropy-based weighted sampling to focus on challenging samples
+3. **Joint Training**: Jointly train weak and strong models through logit mixing to obtain a stronger model
+
+The right panel of the following figure visualizes the joint-training principle through logit mixing and gradient amplification:
 
 <p align="center">
-  <img src="pics/pivotFig.pdf" alt="Model Architecture" width="600"/>
+  <img src="pics/绘图.png" alt="Weak-Driven Learning Method" width="1000"/>
 </p>
 
 ## Quick Start
@@ -82,42 +92,56 @@ cd "/path/to/Weak-Driven-Learning"
 bash scripts/run_ensemble.sh
 ```
 
-The script will automatically:
-- Compute base model entropy
-- Train Stage 1 model
-- Compute Stage 1 entropy
-- Merge entropy files
-- Train ensemble model (Stage 3)
-- Extract the enhanced sub-model
-- Evaluate the extracted model
+The script will automatically execute the three-phase training pipeline:
+- Phase 1: Initialize base model and compute initial entropy
+- Phase 2: Train first-stage model with curriculum learning (entropy-weighted sampling)
+- Phase 3: Jointly train weak and strong models, then extract the enhanced sub-model
 
 ## Training Pipeline
 
 The complete pipeline consists of the following steps:
 
-### Step 0: Compute Base Model Entropy
-Computes `entropy_0` for the base model on the training dataset.
+### Phase 1: Initialization
 
-### Step 1: Stage 1 Training
-Trains the first sub-model `m1` using the base model and Stage 1 training data. Output: `$outdir/stage1_m1`
+**Step 0: Compute Base Model Entropy**
+- Computes `entropy_0` for the base model on the training dataset
+- The base model serves as the "weak agent" in subsequent joint training
 
-### Step 2: Compute Stage 1 Entropy
-Computes `entropy_1` for the Stage 1 model.
+### Phase 2: Curriculum Learning with Entropy-Weighted Sampling
 
-### Step 3: Merge Entropy Files
-Combines `entropy_0` and `entropy_1` → `entropy_merged_stage1.jsonl`
+**Step 1: Stage 1 Training**
+- Trains the first sub-model `m1` using the base model and Stage 1 training data
+- Output: `$outdir/stage1_m1`
+- This model will serve as the "strong agent" in joint training
 
-### Step 4: Prepare Base Model for Fusion
-Copies the base model to `$outdir/stage0_m0` for ensemble fusion.
+**Step 2: Compute Stage 1 Entropy**
+- Computes `entropy_1` for the Stage 1 model
+- Entropy differences identify challenging samples for focused training
 
-### Step 5: Stage 3 Training (Ensemble)
-Fuses `m0 + m1` and continues training with entropy-weighted sampling data. This produces the final ensemble model.
+**Step 3: Merge Entropy Files**
+- Combines `entropy_0` and `entropy_1` → `entropy_merged_stage1.jsonl`
+- Used for entropy-based weighted sampling in subsequent stages
 
-### Step 6: Extract Sub-model
-Extracts the first sub-model (`submodel_idx=0`) from the ensemble model, which contains the enhanced capabilities.
+**Step 4: Prepare Base Model for Joint Training**
+- Copies the base model to `$outdir/stage0_m0` for ensemble fusion
+- This weak model checkpoint will be used in joint training
 
-### Step 7: Evaluation
-Evaluates the extracted model using `eval_vllm_thinking_math.py` on reasoning tasks.
+### Phase 3: Joint Training of Weak and Strong Models
+
+**Step 5: Stage 3 Training (Joint Training)**
+- Fuses `m0` (weak) + `m1` (strong) and continues training with entropy-weighted sampling
+- Implements logit mixing to compel the strong model to refine its decision boundary
+- The joint training mechanism prevents gradient vanishing and maintains learning pressure
+- Output: Final ensemble model with enhanced capabilities
+
+**Step 6: Extract Enhanced Sub-model**
+- Extracts the first sub-model (`submodel_idx=0`) from the ensemble model
+- This sub-model contains the enhanced capabilities learned through weak-driven learning
+- **No additional inference cost**: The extracted model has the same architecture as the base model
+
+**Step 7: Evaluation**
+- Evaluates the extracted model using `eval_vllm_thinking_math.py` on reasoning tasks
+- Compares performance against standard SFT baselines
 
 ## Project Structure
 
@@ -126,29 +150,29 @@ Weak-Driven-Learning/
 ├── scripts/              # One-command pipeline scripts (entry point)
 │   └── run_ensemble.sh  # Complete training pipeline
 ├── ensemble/             # Core training, entropy computation, extraction, and evaluation
-│   ├── ensemble_train.py
-│   ├── run_entropy.py
-│   ├── extract_submodel.py
-│   ├── copymodel.py
-│   └── eval_vllm_thinking_math.py
+│   ├── ensemble_train.py      # Main training script implementing joint training
+│   ├── run_entropy.py         # Entropy computation for curriculum learning
+│   ├── extract_submodel.py    # Extract enhanced sub-model from ensemble
+│   ├── copymodel.py           # Model copying utility
+│   └── eval_vllm_thinking_math.py  # Evaluation script
 ├── utils/                # Model loading, fusion, entropy computation, data processing
-│   ├── utils.py
-│   ├── fuse_models.py
-│   ├── compute_entropy.py
-│   ├── weight_datasets.py
-│   └── load_dataset.py
+│   ├── utils.py          # Model and data loading utilities
+│   ├── fuse_models.py    # Logit mixing and model fusion (WMSS)
+│   ├── compute_entropy.py     # Entropy computation algorithms
+│   ├── weight_datasets.py     # Entropy-based weighted sampling (BrownBoost-style)
+│   └── load_dataset.py    # Dataset loading utilities
 ├── Trainer/              # SFT training runners and trainers
-│   ├── sft_runner.py
-│   ├── sft_trainer.py
-│   └── ensemble_sft_trainer.py
+│   ├── sft_runner.py     # Distributed training runner
+│   ├── sft_trainer.py    # Base SFT trainer
+│   └── ensemble_sft_trainer.py  # Joint training trainer with logit mixing
 ├── EnsembleQwen3/        # Qwen3 ensemble model definitions
 │   ├── configuration_qwen3.py
 │   └── modeling_qwen3.py
 ├── docs/                 # Additional documentation
 ├── pics/                 # Figures and diagrams
-│   ├── weak-drivenlearning.png  # Framework overview
-│   ├── pivotFig.pdf            # Model architecture
-│   └── 结果图.png              # Results
+│   ├── weak-drivenlearning.png  # Paradigm comparison diagram
+│   ├── 绘图.png                 # Method overview (three phases + logit mixing)
+│   └── 结果图.png              # Evaluation results
 ├── weights/              # Model checkpoints (generated, gitignored)
 ├── logs/                 # Training logs (generated, gitignored)
 ├── tensorboard_logs/     # TensorBoard logs (generated, gitignored)
@@ -164,27 +188,32 @@ Weak-Driven Learning is implemented as a modular system with clear separation of
 
 ### Core Modules
 
-1. **Ensemble Training Module** (`ensemble/ensemble_train.py`)
-   - Implements the multi-stage training pipeline
-   - Manages model fusion and weighted sampling
-   - Coordinates training stages
+1. **Joint Training Module** (`ensemble/ensemble_train.py`, `Trainer/ensemble_sft_trainer.py`)
+   - Implements the three-phase training pipeline
+   - Manages logit mixing between weak and strong models
+   - Coordinates joint optimization to prevent gradient vanishing
 
 2. **Entropy Computation Module** (`utils/compute_entropy.py`, `ensemble/run_entropy.py`)
    - Computes entropy for models at different stages
+   - Identifies challenging samples for curriculum learning
    - Merges entropy files for weighted sampling
-   - Supports BrownBoost-style weighting
 
 3. **Model Fusion Module** (`utils/fuse_models.py`)
-   - Implements WMSS fusion method
+   - Implements logit mixing mechanism
    - Handles ensemble model creation and sub-model extraction
    - Manages model checkpointing
 
-4. **Training Runner** (`Trainer/sft_runner.py`)
+4. **Weighted Sampling Module** (`utils/weight_datasets.py`)
+   - Implements entropy-based weighted sampling (BrownBoost-style)
+   - Focuses training on samples where weak and strong models disagree
+   - Supports curriculum learning in Phase 2
+
+5. **Training Runner** (`Trainer/sft_runner.py`)
    - Handles distributed training with DeepSpeed
    - Manages training loops and optimization
    - Supports gradient accumulation and mixed precision
 
-5. **Evaluation Module** (`ensemble/eval_vllm_thinking_math.py`)
+6. **Evaluation Module** (`ensemble/eval_vllm_thinking_math.py`)
    - Evaluates models on reasoning tasks
    - Uses vLLM for efficient inference
    - Outputs results to `results/` directory
@@ -200,19 +229,19 @@ Key parameters in `scripts/run_ensemble.sh`:
 GPU_USE=0,1,2,3,4,5,6,7
 
 # Model and Data Paths
-base_model="Qwen/Qwen3-4B-Base"
+base_model="Qwen/Qwen3-4B-Base"  # Base model (will serve as weak agent)
 stage1_data_path="/path/to/stage1_data.jsonl"
 data_files="/path/to/data.jsonl"
 outdir="weights/ensemble/Qwen3-4B-Base"
 
 # Training Hyperparameters
-stage1_epochs=1
-stage3_epochs=1
+stage1_epochs=1      # Phase 2: Curriculum learning
+stage3_epochs=1      # Phase 3: Joint training
 per_device_train_batch_size=4
 gradient_accumulation_steps=4
 max_seq_length=2048
 
-# BrownBoost Parameters
+# Entropy-based Weighted Sampling (BrownBoost Parameters)
 alpha=0.1
 beta=0.8
 ```
@@ -271,6 +300,8 @@ beta=0.8
 
 Evaluation results are saved to the `results/` directory (if configured in the evaluation script). Training logs are written to `logs/`.
 
+Our method consistently improves performance on challenging benchmarks, including mathematical reasoning and code generation, compared to standard SFT baselines. These gains arise purely from improved optimization dynamics during training and incur **no additional inference cost**.
+
 Example results visualization:
 
 <p align="center">
@@ -287,10 +318,13 @@ You can run individual stages by modifying `scripts/run_ensemble.sh` or calling 
 # Compute entropy only
 python ensemble/run_entropy.py --model-path <path> --data-path <path>
 
-# Train Stage 1 only
+# Train Stage 1 only (Phase 2: Curriculum Learning)
 python ensemble/ensemble_train.py --stage 1 --model-name <model> --stage1-data-path <path>
 
-# Extract sub-model
+# Joint training (Phase 3)
+python ensemble/ensemble_train.py --stage 3 --model-name <model> --data-files <path>
+
+# Extract enhanced sub-model
 python ensemble/extract_submodel.py --ensemble-path <path> --submodel-idx 0
 ```
 
@@ -299,40 +333,49 @@ python ensemble/extract_submodel.py --ensemble-path <path> --submodel-idx 0
 To add support for new model types:
 
 1. Add model definition to `EnsembleQwen3/` or create a new model directory
-2. Add fusion logic to `utils/fuse_models.py`
+2. Add fusion logic to `utils/fuse_models.py` (implement logit mixing)
 3. Update `ensemble/ensemble_train.py` to support the new type
 
-## Citation
+### Understanding Logit Mixing
 
-If you find Weak-Driven Learning useful, please consider citing:
+The core mechanism of weak-driven learning is logit mixing during joint training. This compels the strong model to:
+- Observe weak model predictions on the same inputs
+- Identify failure modes and incorrect reasoning paths
+- Explicitly distance itself from these failure modes
+- Maintain meaningful gradients even when standard supervision saturates
 
-```bibtex
-@misc{weak-driven-learning,
-  title={Weak-Driven Learning: Multi-Stage Training with Entropy-Based Weighted Sampling},
-  author={Your Name},
-  year={2025},
-  url={https://github.com/chenzehao82/Weak-Driven-Learning}
-}
-```
+## Theoretical Insights
+
+Our gradient-level analysis demonstrates that:
+
+1. **Gradient Reshaping**: Incorporating weak-model logits reshapes the optimization landscape, preventing gradient vanishing on non-target tokens.
+
+2. **Sustained Learning Pressure**: The joint training mechanism maintains effective learning pressure beyond standard supervision saturation.
+
+3. **No Inference Overhead**: The extracted enhanced sub-model has the same architecture as the base model, requiring no additional computational cost during inference.
 
 ## Acknowledgments
 
-- Project organization and documentation style inspired by [RAGEN](https://github.com/mll-lab-nu/RAGEN)
 - Model architecture based on Qwen models
-- Training framework built on Hugging Face Transformers and DeepSpeed
+- Training framework built on TRL and Hugging Face Transformers
+- Project organization inspired by [RAGEN](https://github.com/mll-lab-nu/RAGEN)
 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Contributing
+## Citation
 
-We welcome contributions! Please feel free to submit a Pull Request.
+If you find Weak-Driven Learning useful, please consider citing our work:
 
-## References
-
-- [RAGEN: Understanding Self-Evolution in LLM Agents via Multi-Turn Reinforcement Learning](https://github.com/mll-lab-nu/RAGEN)
-- [Qwen Models](https://github.com/QwenLM/Qwen)
+```bibtex
+@article{weak-driven-learning,
+  title={Weak-Driven Learning: Weak Agents can Make Strong Agents Stronger},
+  author={Your Name and Co-authors},
+  journal={Conference/Journal Name},
+  year={2025}
+}
+```
 
 ---
 
