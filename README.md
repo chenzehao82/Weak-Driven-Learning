@@ -44,7 +44,7 @@ Our framework has three phases:
 The right panel of the following figure visualizes the joint-training principle through logit mixing and gradient amplification:
 
 <p align="center">
-  <img src="pics/绘图.png" alt="Weak-Driven Learning Method" width="1000"/>
+  <img src="pics/framework.png" alt="Weak-Driven Learning Method" width="1000"/>
 </p>
 
 ## Quick Start
@@ -206,7 +206,7 @@ Weak-Driven Learning is implemented as a modular system with clear separation of
 
 ### Core Modules
 
-1. **Joint Training Module** (`ensemble/ensemble_train.py`, `Trainer/ensemble_sft_trainer.py`)
+1. **Joint Training Module** (`ensemble/ensemble_train.py`)
    - Implements the three-phase training pipeline
    - Manages logit mixing between weak and strong models
    - Coordinates joint optimization to prevent gradient vanishing
@@ -245,7 +245,7 @@ Our method consistently improves performance on challenging benchmarks, includin
 Example results visualization:
 
 <p align="center">
-  <img src="pics/结果图.png" alt="Evaluation Results" width="600"/>
+  <img src="pics/results.png" alt="Evaluation Results" width="600"/>
 </p>
 
 ## Theoretical Insights
@@ -262,7 +262,6 @@ Our gradient-level analysis demonstrates that:
 
 - Model architecture based on Qwen models
 - Training framework built on TRL and Hugging Face Transformers
-- Project organization inspired by [RAGEN](https://github.com/mll-lab-nu/RAGEN)
 
 ## License
 

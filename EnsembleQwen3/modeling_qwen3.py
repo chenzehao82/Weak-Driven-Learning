@@ -350,40 +350,6 @@ class Qwen3Model(Qwen3PreTrainedModel):
 
         # Initialize weights and apply final processing
         self.post_init()
-        
-        # Register NEFTune forward hook on embedding layer
-        def neftune_forward_hook(module, input, output):
-            """
-            NEFTune forward hook: adds scaled uniform noise to embeddings during training.
-            Noise is sampled from Uniform[-1, 1] and scaled by alpha / sqrt(L * d) where:
-            - alpha = 5 (fixed)
-            - L = sequence length (seq_len)
-            - d = embedding dimension (hidden_size)
-            """
-            if module.training:
-                # Extract dimensions: output shape is (batch, seq_len, embed_dim)
-                batch_size, seq_len, embed_dim = output.shape
-                L = seq_len
-                d = embed_dim
-                
-                # Alpha is fixed to 5 as per NEFTune requirements
-                alpha = 5.0
-                
-                # Compute scaling factor: alpha / sqrt(L * d)
-                scaling_factor = alpha / torch.sqrt(torch.tensor(L * d, dtype=output.dtype, device=output.device))
-                
-                # Sample noise from Uniform[-1, 1]
-                # torch.rand_like gives [0, 1), so we scale and shift to get [-1, 1]
-                noise = (torch.rand_like(output) * 2.0) - 1.0
-                
-                # Scale the noise and add to output
-                output = output + noise * scaling_factor
-                # print("output shape:::", output.shape)
-            
-            return output
-        
-        # Register the hook on embed_tokens
-        self._neftune_hook_handle = self.embed_tokens.register_forward_hook(neftune_forward_hook)
 
     @check_model_inputs
     @auto_docstring
@@ -601,83 +567,18 @@ class QwenBoostForCausalLM(PreTrainedModel, GenerationMixin):
         logits_to_keep: Union[int, torch.Tensor] = 0,
         **kwargs: Unpack[TransformersKwargs]
     ):
-        """
-        原始 Ensemble 前向逻辑（已按要求保留为注释）：
-
-        # outputs_list = []
-        #
-        # # ---- 处理每个子模型的 KV cache ----
-        # if isinstance(past_key_values, list):
-        #     # 期望长度 == num_sub_models
-        #     past_key_values_list = past_key_values
-        # else:
-        #     # 初始调用 / 没传 list 的情况，给每个子模型一个 None
-        #     past_key_values_list = [past_key_values] * self.num_sub_models
-        #
-        # # ---- 前向 & 收集输出 ----
-        # for idx, (model, pkv) in enumerate(zip(self.sub_models, past_key_values_list)):
-        #     out = model(
-        #         input_ids=input_ids,
-        #         attention_mask=attention_mask,
-        #         position_ids=position_ids,
-        #         past_key_values=pkv,
-        #         # inputs_embeds=inputs_embeds,  # 如果你需要可以打开
-        #         # 不要把 labels 传给子模型，否则会重复算 loss
-        #         labels=None,
-        #         use_cache=use_cache,
-        #         cache_position=cache_position,
-        #         logits_to_keep=logits_to_keep,
-        #         **kwargs,
-        #     )
-        #     outputs_list.append(out)
-        #
-        # # ---- 加权融合 logits ----
-        # # logits shape: (num_sub_models, batch, seq, vocab)
-        # stacked_logits = torch.stack([o.logits for o in outputs_list], dim=0)
-        # # 从 config 读取 fusion_lambda，如果不存在则默认 0.5（平均融合）
-        # fusion_lambda = getattr(self.config, "fusion_lambda", 0.5)
-        # # 前面的模型（index 0）占 (1-lambda)，后面的模型（index 1）占 lambda
-        # if len(outputs_list) == 2:
-        #     logits = (1 - fusion_lambda) * stacked_logits[0] + fusion_lambda * stacked_logits[1]
-        # else:
-        #     # 如果有多个模型，则平均融合（兼容性处理）
-        #     logits = stacked_logits.mean(dim=0)
-        #
-        # # ---- 计算 ensemble 的 loss（像 Qwen3ForCausalLM 那样）----
-        # loss = None
-        # if labels is not None:
-        #     # 这里直接复用子模型的 loss_function
-        #     loss = self.sub_models[0].loss_function(
-        #         logits=logits,
-        #         labels=labels,
-        #         vocab_size=self.config.vocab_size,
-        #         **kwargs,
-        #     )
-        #
-        # # ---- 组装返回值，确保 Trainer 可以拿到 loss ----
-        # base_output = outputs_list[0]
-        # return CausalLMOutputWithPast(
-        #     loss=loss,
-        #     logits=logits,
-        #     past_key_values=[o.past_key_values for o in outputs_list],
-        #     hidden_states=base_output.hidden_states,
-        #     attentions=base_output.attentions,
-        # )
-        """
-
         outputs_list = []
 
         # ---- 处理每个子模型的 KV cache ----
         if isinstance(past_key_values, list):
-            past_key_values_list = past_key_values  # 期望长度 == num_sub_models
+            # 期望长度 == num_sub_models
+            past_key_values_list = past_key_values
         else:
             # 初始调用 / 没传 list 的情况，给每个子模型一个 None
             past_key_values_list = [past_key_values] * self.num_sub_models
 
         # ---- 前向 & 收集输出 ----
         for idx, (model, pkv) in enumerate(zip(self.sub_models, past_key_values_list)):
-            if idx == 0:
-                continue
             out = model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
@@ -693,21 +594,24 @@ class QwenBoostForCausalLM(PreTrainedModel, GenerationMixin):
             )
             outputs_list.append(out)
 
-        # ---- 高斯噪声 + 第二个模型 logits ----
-        # 假设 sub_models[0] 对应“高斯噪声模型”，sub_models[1] 是真正使用的模型
-        # 高斯噪声与第二个模型 logits 逐元素相加，第二个模型权重视为 1
-        # if len(outputs_list) < 2:
-        #     raise ValueError("Qwen3ForEnsemble 期望至少包含 2 个子模型，用于 [高斯噪声 + 第二个模型 logits]")
+        # ---- 加权融合 logits ----
+        # logits shape: (num_sub_models, batch, seq, vocab)
+        stacked_logits = torch.stack([o.logits for o in outputs_list], dim=0)
+        # 从 config 读取 fusion_lambda，如果不存在则默认 0.5（平均融合）
+        fusion_lambda = getattr(self.config, "fusion_lambda", 0.5)
+        # 前面的模型（index 0）占 (1-lambda)，后面的模型（index 1）占 lambda
+        if len(outputs_list) == 2:
+            logits = (1 - fusion_lambda) * stacked_logits[0] + fusion_lambda * stacked_logits[1]
+            # print("logits shape:::", logits.shape)
+        else:
+            # 如果有多个模型，则平均融合（兼容性处理）
+            logits = stacked_logits.mean(dim=0)
 
-        logits_model2 = outputs_list[-1].logits
-        # noise_std = getattr(self.config, "gaussian_noise_std", 1.0)
-        # gaussian_noise = torch.randn_like(logits_model2) * noise_std
-        logits = logits_model2 # + gaussian_noise
-
-        # ---- 计算 loss：仍然复用子模型的 loss_function ----
+        # ---- 计算 ensemble 的 loss（像 Qwen3ForCausalLM 那样）----
         loss = None
         if labels is not None:
-            loss = self.sub_models[1].loss_function(
+            # 这里直接复用子模型的 loss_function
+            loss = self.sub_models[0].loss_function(
                 logits=logits,
                 labels=labels,
                 vocab_size=self.config.vocab_size,
@@ -715,7 +619,7 @@ class QwenBoostForCausalLM(PreTrainedModel, GenerationMixin):
             )
 
         # ---- 组装返回值，确保 Trainer 可以拿到 loss ----
-        base_output = outputs_list[-1]
+        base_output = outputs_list[0]
         return CausalLMOutputWithPast(
             loss=loss,
             logits=logits,

@@ -242,7 +242,7 @@ class VLLMBackend:
                         download_dir="/root/buaa/hf_cache",
                         gpu_memory_utilization=gpu_memory_utilization,
                         seed=seed)
-        self.sp = SamplingParams(temperature=0.0, top_p=1.0, max_tokens=max_model_len, stop=None, seed=seed)
+        self.sp = SamplingParams(temperature=0.5, top_p=0.95, max_tokens=max_model_len, stop=None, seed=seed)
 
     def generate(self, prompts: List[str]) -> List[str]:
         outs = self.LLM.generate(prompts, self.sp)
@@ -390,11 +390,11 @@ def evaluate(dataset_path: str,
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--dataset", default="/root/buaa/czh/BoostLLM/Decoder_Only/dataset/math500/test.jsonl", type=str)
-    p.add_argument("--model", default="/root/buaa/czh/EnsembleLLM/weights/llmboost/Qwen3-4B-Base/stage3_fused_brownboost/checkpoint-436", type=str)
-    p.add_argument("--tp", type=int, default=1)
+    p.add_argument("--model", default="/root/buaa/czh/Weak-Driving Learning/weights/ensemble/Qwen3-4B-Base/stage1_m1", type=str)
+    p.add_argument("--tp", type=int, default=8)
     p.add_argument("--max_model_len", type=int, default=1024 * 4)
     p.add_argument("--thinking", type=bool, default=False)
-    p.add_argument("--repeat", type=int, default=1, help="重复测试次数")
+    p.add_argument("--repeat", type=int, default=3, help="重复测试次数")
     p.add_argument("--epoch", type=str, default=None, help="训练轮数")
     p.add_argument("--dataset_name", type=str, default=None, help="数据集名称（用于保存路径和日志）")
     p.add_argument("--seed", type=int, default=42, help="随机种子（用于可复现性）")

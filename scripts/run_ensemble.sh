@@ -35,11 +35,11 @@ GPU_USE=0,1,2,3,4,5,6,7
 export CUDA_VISIBLE_DEVICES=$GPU_USE
 
 # 模型和数据路径配置
-outdir="../weights/ensemble/Qwen3-4B-Base"
-base_model="Qwen/Qwen3-4B-Base"
+outdir="../weights/ensemble/Qwen3-8B-Base"
+base_model="Qwen/Qwen3-8B-Base"
 # 默认使用本仓库 dataprocess 脚本生成的数据
-stage1_data_path="/root/buaa/czh/Weak-Driving Learning/dataprocess/am_deepseek_r1_filtered_ad.jsonl"
-data_files="/root/buaa/czh/Weak-Driving Learning/dataprocess/am_deepseek_r1_filtered_ad.jsonl"
+stage1_data_path="/root/buaa/czh/dataset/am_deepseek_r1_filtered_ad.jsonl"
+data_files="/root/buaa/czh/dataset/am_deepseek_r1_filtered_ad.jsonl"
 
 # 训练参数配置
 stage1_epochs=1
@@ -110,50 +110,49 @@ conda activate qwen
 
 # 注意：需要确保 run_entropy.py 在路径中
 # 如果不在，请修改为正确的路径
-accelerate launch \
-    --config_file=/root/buaa/czh/EnsembleLLM/scripts/accelerate_config.yaml \
-    ../ensemble/run_entropy.py compute \
-    --model_path "$base_model" \
-    --data_file "$data_files" \
-    --output_path "$entropy_0_path" \
-    --entropy_field "entropy_0" \
-    --stage "stage0"
+# accelerate launch \
+#     --config_file=/root/buaa/czh/EnsembleLLM/scripts/accelerate_config.yaml \
+#     ../ensemble/run_entropy.py compute \
+#     --model_path "$base_model" \
+#     --data_file "$data_files" \
+#     --output_path "$entropy_0_path" \
+#     --entropy_field "entropy_0" \
+#     --stage "stage0"
 
 # ========== 步骤 1: Stage 1 训练 -> m1 ==========
 echo ""
 echo "=========================================="
 echo "步骤 1: Stage 1 训练 -> m1"
 echo "=========================================="
-conda activate qwen
-accelerate launch \
-    --config_file=/root/buaa/czh/EnsembleLLM/scripts/accelerate_config.yaml \
-    ../ensemble/ensemble_train.py \
-    --stage 1 \
-    --model-name "$base_model" \
-    --stage1-data-path "$stage1_data_path" \
-    --data-files "$data_files" \
-    --output-dir "$outdir" \
-    --wandb-project "ensemble-math" \
-    --wandb-run-name "qwen3-ensemble" \
-    --per-device-train-batch-size 1 \
-    --grad-accum 32 \
-    --max-seq-length 4096 \
-    --use-chat-template True \
-    --stage1-num-epochs $stage1_epochs \
-    --alpha $alpha \
-    --beta $beta \
-    --gamma $gamma \
-    --easy-quantile $easy_quantile \
-    --hard-quantile $hard_quantile \
-    --patience $patience \
-    --easy-patience $easy_patience \
-    --lambda-time $lambda_time \
-    --lambda-easy $lambda_easy \
-    --sample-multiplier-stage2 $sample_multiplier_stage2 \
-    --sample-multiplier-stage3 $sample_multiplier_stage3 \
-    --entropy-results ""
+# conda activate qwen
+# accelerate launch \
+#     --config_file=/root/buaa/czh/EnsembleLLM/scripts/accelerate_config.yaml \
+#     ../ensemble/ensemble_train.py \
+#     --stage 1 \
+#     --model-name "$base_model" \
+#     --stage1-data-path "$stage1_data_path" \
+#     --data-files "$data_files" \
+#     --output-dir "$outdir" \
+#     --wandb-project "ensemble-math" \
+#     --wandb-run-name "qwen3-ensemble" \
+#     --per-device-train-batch-size 1 \
+#     --grad-accum 32 \
+#     --max-seq-length 4096 \
+#     --use-chat-template True \
+#     --stage1-num-epochs $stage1_epochs \
+#     --alpha $alpha \
+#     --beta $beta \
+#     --gamma $gamma \
+#     --easy-quantile $easy_quantile \
+#     --hard-quantile $hard_quantile \
+#     --patience $patience \
+#     --easy-patience $easy_patience \
+#     --lambda-time $lambda_time \
+#     --lambda-easy $lambda_easy \
+#     --sample-multiplier-stage2 $sample_multiplier_stage2 \
+#     --sample-multiplier-stage3 $sample_multiplier_stage3 \
+#     --entropy-results ""
 
-wait_and_clear_gpu
 
 # ========== 步骤 2: 计算 m1 的 entropy_1 ==========
 echo ""
@@ -167,16 +166,14 @@ m1_checkpoint=$(get_latest_checkpoint "$m1_dir")
 entropy_1_path="$entropy_dir/entropy_1.jsonl"
 echo "使用 m1 checkpoint: $m1_checkpoint"
 conda activate qwen
-accelerate launch \
-    --config_file=/root/buaa/czh/EnsembleLLM/scripts/accelerate_config.yaml \
-    ../ensemble/run_entropy.py compute \
-    --model_path "$m1_checkpoint" \
-    --data_file "$data_files" \
-    --output_path "$entropy_1_path" \
-    --entropy_field "entropy_1" \
-    --stage "stage1"
-
-wait_and_clear_gpu
+# accelerate launch \
+#     --config_file=/root/buaa/czh/EnsembleLLM/scripts/accelerate_config.yaml \
+#     ../ensemble/run_entropy.py compute \
+#     --model_path "$m1_checkpoint" \
+#     --data_file "$data_files" \
+#     --output_path "$entropy_1_path" \
+#     --entropy_field "entropy_1" \
+#     --stage "stage1"
 
 # ========== 步骤 3: 合并 entropy_0 和 entropy_1 ==========
 echo ""
@@ -186,13 +183,84 @@ echo "=========================================="
 
 entropy_merged_stage1="$entropy_dir/entropy_merged_stage1.jsonl"
 
-python ../ensemble/run_entropy.py merge \
-    --input_files "$entropy_0_path" "$entropy_1_path" \
-    --output_path "$entropy_merged_stage1"
+# python ../ensemble/run_entropy.py merge \
+#     --input_files "$entropy_0_path" "$entropy_1_path" \
+#     --output_path "$entropy_merged_stage1"
 
 echo "合并完成: $entropy_merged_stage1"
+
+# ========== 步骤 3.5: 测试 Stage 1 的 m1 模型 ==========
+echo ""
+echo "=========================================="
+echo "步骤 3.5: 评测 Stage 1 训练的 m1 模型"
+echo "=========================================="
+
+# 测试数据集配置
+EVAL_DATASETS=(
+    "amc23|/root/buaa/czh/dataset/test_dataset/amc23/test.json|json"
+    "math500|/root/buaa/czh/dataset/test_dataset/math500/test.jsonl|jsonl"
+    "aime2025|/root/buaa/czh/dataset/test_dataset/aime2025/test.jsonl|jsonl"
+    "mawps|/root/buaa/czh/dataset/test_dataset/mawps/test.json|json"
+    "AQuA|/root/buaa/czh/dataset/test_dataset/AQuA/test.json|json"
+    "gsm8k|/root/buaa/czh/dataset/test_dataset/gsm8k/test.json|json"
+    "SVAMP|/root/buaa/czh/dataset/test_dataset/SVAMP/test.json|json"
+)
+EVAL_TP=8  # tensor parallel size for evaluation
+EVAL_REPEAT=3  # repeat times for evaluation
+
+conda activate verl_dev
+
+echo "开始评测 Stage 1 的 m1 模型: $m1_checkpoint"
+echo ""
+
+# for dataset_config in "${EVAL_DATASETS[@]}"; do
+#     IFS='|' read -r dataset_name dataset_path file_type <<< "$dataset_config"
+#     echo "  → 评测数据集: $dataset_name ..."
+
+#     CUDA_VISIBLE_DEVICES=$GPU_USE python ../ensemble/eval_vllm_thinking_math.py \
+#         --dataset "$dataset_path" \
+#         --model "$m1_checkpoint" \
+#         --tp $EVAL_TP \
+#         --epoch "stage1_m1" \
+#         --repeat $EVAL_REPEAT \
+#         --dataset_name "$dataset_name"
+
+#     if [ $? -ne 0 ]; then
+#         echo "⚠️  警告: 数据集 $dataset_name 评测失败"
+#     else
+#         echo "  ✓ $dataset_name 评测完成"
+#     fi
+#     echo ""
+# done
+
+echo "✓ Stage 1 m1 模型评测完成"
+wait_and_clear_gpu
+
 # ========== 步骤 4: 制作 stage0_m0 ==========
-python ../ensemble/copymodel.py
+echo ""
+echo "=========================================="
+echo "步骤 4: 复制 base 模型到 stage0_m0"
+echo "=========================================="
+
+# 确保 outdir 是绝对路径（脚本已切换到脚本所在目录）
+if [[ ! "$outdir" = /* ]]; then
+    # 如果是相对路径，转换为绝对路径
+    outdir_abs="$(realpath "$outdir")"
+else
+    outdir_abs="$outdir"
+fi
+
+conda activate qwen
+python ../ensemble/copymodel.py \
+    --model-name "$base_model" \
+    --output-dir "$outdir_abs"
+
+if [ $? -ne 0 ]; then
+    echo "❌ 复制模型失败"
+    exit 1
+fi
+
+echo "✓ stage0_m0 模型准备完成: $outdir_abs/stage0_m0"
 
 # ========== 步骤 5: Stage 3 训练 -> 最终模型 ==========
 echo ""
@@ -233,7 +301,6 @@ accelerate launch \
    --model-type $model_type \
    --freeze-first-model $freeze
 
-wait_and_clear_gpu
 
 # ========== 步骤 6: 提取第一个子模型 ==========
 echo ""
@@ -259,7 +326,7 @@ conda activate qwen
 python ../ensemble/extract_submodel.py \
     --input "$final_checkpoint" \
     --output "$extracted_model_dir" \
-    --submodel_idx 0 \
+    --submodel_idx 1 \
     --dtype bfloat16
 
 if [ $? -ne 0 ]; then
