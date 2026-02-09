@@ -5,7 +5,7 @@ import torch
 import re
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 
-# Handle execution both as package (`EnsembleLLM.utils`) and as top-level script (`utils`)
+## Handle execution both as package (`EnsembleLLM.utils`) and as top-level script (`utils`)
 try:
     from EnsembleLLM.EnsembleQwen3.modeling_qwen3 import QwenBoostForCausalLM
 except ImportError:
@@ -23,26 +23,26 @@ except ImportError:
 
 def extract_submodel(ensemble_model_path, submodel_idx, save_dir, torch_dtype=torch.bfloat16):
     """
-    从融合模型中提取指定的子模型并保存为独立模型。
+    Extract specified sub-model from ensemble model and save as independent model.
 
     Args:
-        ensemble_model_path (str): 融合模型路径
-        submodel_idx (int): 要提取的子模型索引（0表示第一个，1表示第二个）
-        save_dir (str): 保存的目录
-        torch_dtype: 保存的权重精度 (默认 bfloat16)
+        ensemble_model_path (str): Ensemble model path
+        submodel_idx (int): Sub-model index to extract (0 for first, 1 for second)
+        save_dir (str): Save directory
+        torch_dtype: Saved weight precision (default bfloat16)
 
     Returns:
-        str: 保存路径
+        str: Save path
     """
-    print(f"🔹 从融合模型中提取子模型:")
-    print(f"   - 融合模型: {ensemble_model_path}")
-    print(f"   - 子模型索引: {submodel_idx}")
-    print(f"   - 保存到: {save_dir}")
+    print(f"Extracting sub-model from ensemble:")
+    print(f"   - Ensemble model: {ensemble_model_path}")
+    print(f"   - Sub-model index: {submodel_idx}")
+    print(f"   - Save to: {save_dir}")
 
     os.makedirs(save_dir, exist_ok=True)
 
-    # 加载融合模型
-    print("\n🔹 加载融合模型...")
+    ## Loading ensemble model
+    print("\n🔹 Loading ensemble model...")
     ensemble_model = QwenBoostForCausalLM.from_pretrained(
         ensemble_model_path,
         torch_dtype="auto",
@@ -51,42 +51,42 @@ def extract_submodel(ensemble_model_path, submodel_idx, save_dir, torch_dtype=to
     )
     ensemble_state_dict = ensemble_model.state_dict()
 
-    # 提取子模型的权重
+    ## Extract sub-model weights
     submodel_prefix = f"sub_models.{submodel_idx}."
     extracted_state_dict = {}
     
-    print(f"\n🔹 提取 {submodel_prefix} 的权重...")
+    print(f"\n🔹 Extracting {submodel_prefix}  weights...")
     for key, value in ensemble_state_dict.items():
         if key.startswith(submodel_prefix):
-            # 移除 sub_models.{idx}. 前缀
+            ## Remove sub_models.{idx}. prefix
             new_key = key[len(submodel_prefix):]
-            # 跳过 prev_*_proj 权重（这些是用于gate的，不属于原始模型）
+            ## Skip prev_*_proj weights (these are for gate, don't belong to original model)
             if "prev_" not in new_key:
                 extracted_state_dict[new_key] = value.to(torch_dtype)
     
-    print(f"   ✅ 提取了 {len(extracted_state_dict)} 个权重张量")
+    print(f"   ✅ Extracting {len(extracted_state_dict)}  weight tensors")
 
-    # 保存 tokenizer
-    print("\n🔹 保存 tokenizer ...")
+    ## Saving tokenizer
+    print("\n🔹 Saving tokenizer ...")
     tokenizer = AutoTokenizer.from_pretrained(ensemble_model_path)
     tokenizer.save_pretrained(save_dir)
 
-    # 加载基础模型结构（用于保存配置）
-    print("\n🔹 保存 config.json ...")
+    ## Load base model structure (for saving config)
+    print("\n🔹 Save config.json ...")
     base_config = AutoConfig.from_pretrained(ensemble_model_path)
-    # 从融合模型的配置中获取子模型配置
+    ## Get sub-model config from ensemble model config
     if hasattr(base_config, "sub_model_cfgs") and base_config.sub_model_cfgs:
-        # 复制子模型配置字典（避免修改原始配置）
+        ## Copy sub-model config dict (avoid modifying original config)
         submodel_config_dict = dict(base_config.sub_model_cfgs[submodel_idx])
-        # 移除融合相关的配置字段
+        ## Remove ensemble-related config fields
         submodel_config_dict.pop("num_sub_models", None)
         submodel_config_dict.pop("is_llmboost", None)
         submodel_config_dict.pop("sub_model_cfgs", None)
-        # 恢复为标准的 Qwen3 配置
+        ## Restore to standard Qwen3 config
         if "architectures" not in submodel_config_dict or not submodel_config_dict.get("architectures"):
             submodel_config_dict["architectures"] = ["Qwen3ForCausalLM"]
     else:
-        # 如果没有子模型配置，使用基础配置
+        ## If no sub-model config, use base config
         submodel_config_dict = base_config.to_dict()
         submodel_config_dict.pop("num_sub_models", None)
         submodel_config_dict.pop("is_llmboost", None)
@@ -97,26 +97,26 @@ def extract_submodel(ensemble_model_path, submodel_idx, save_dir, torch_dtype=to
     with open(os.path.join(save_dir, "config.json"), "w") as f:
         json.dump(submodel_config_dict, f, indent=2, ensure_ascii=False)
 
-    # 保存权重
-    print("\n🔹 保存权重...")
+    ## Saving weights
+    print("\n🔹 Saving weights...")
     final_path = os.path.join(save_dir, "pytorch_model.bin")
     torch.save(extracted_state_dict, final_path)
 
-    print(f"\n🎉 提取完成! 保存到: {final_path}")
+    print(f"\n🎉 Extracting! Save to: {final_path}")
     return final_path
 
 def fuse_submodels(model_list, save_dir, torch_dtype=torch.bfloat16, fusion_lambda=0.5):
     """
-    将多个 CausalLM 模型合并为一个 Ensemble 模型的权重格式。
+     CausalLM Model Ensemble Model weights。
 
     Args:
-        model_list (List[str]): 模型路径列表或 HF 名称列表
-        save_dir (str): 保存的目录
-        torch_dtype: 保存的权重精度 (默认 bfloat16)
-        fusion_lambda (float): 融合权重，前面的模型占 (1-lambda)，后面的模型占 lambda。默认 0.5 表示平均融合
+        model_list (List[str]): Model path list or HF name list
+        save_dir (str): Save directory
+        torch_dtype: Saved weight precision (default bfloat16)
+        fusion_lambda (float): Fusion weight, previous model accounts for (1-lambda), later model accounts for lambda. Default 0.5 means average fusion
 
     Returns:
-        str: 保存路径
+        str: Save path
     """
 
     print(f"🔹 Loading {len(model_list)} models:")
@@ -139,9 +139,9 @@ def fuse_submodels(model_list, save_dir, torch_dtype=torch.bfloat16, fusion_lamb
     config = AutoConfig.from_pretrained(model_list[0])
     config_dict = config.to_dict()
 
-    # 确保保存 model_type，这对于正确加载模型很重要
+    ## Ensure model_type is saved, which is important for correct model loading
     if "model_type" not in config_dict:
-        # 如果 config 中没有 model_type，尝试从模型路径或配置推断
+        ## If no model_type in config, try to infer from model path or config
         if hasattr(config, "model_type"):
             config_dict["model_type"] = config.model_type
         elif "qwen2" in model_list[0].lower():
@@ -155,7 +155,7 @@ def fuse_submodels(model_list, save_dir, torch_dtype=torch.bfloat16, fusion_lamb
     for idx, m in enumerate(model_list):
         sub_cfg = AutoConfig.from_pretrained(m)
         sub_cfg_dict = sub_cfg.to_dict()
-        # 确保每个子配置也有 model_type
+        ## Ensure each sub-config also has model_type
         if "model_type" not in sub_cfg_dict:
             if hasattr(sub_cfg, "model_type"):
                 sub_cfg_dict["model_type"] = sub_cfg.model_type
@@ -167,15 +167,15 @@ def fuse_submodels(model_list, save_dir, torch_dtype=torch.bfloat16, fusion_lamb
     
     config_dict.update({
         "num_sub_models": len(models),
-        # "num_hidden_layers": config.num_hidden_layers * len(models),
-        # "layer_types": config.layer_types * len(models),
-        "architectures": ["QwenBoostForCausalLM"],   # 让你的 Ensemble 类被识别
+        ## "num_hidden_layers": config.num_hidden_layers * len(models),
+        ## "layer_types": config.layer_types * len(models),
+        "architectures": ["QwenBoostForCausalLM"],   ## Make your Ensemble class recognized
         "is_llmboost": False,
         "sub_model_cfgs": sub_model_cfgs,
-        "fusion_lambda": fusion_lambda,  # 融合权重：前面的模型占 (1-lambda)，后面的模型占 lambda
+        "fusion_lambda": fusion_lambda,  ## Fusion weight: previous model accounts for (1-lambda), later model accounts for lambda
     })
     
-    print(f"🔹 保存的 model_type: {config_dict.get('model_type', '未设置')}")
+    print(f"🔹 Saved model_type: {config_dict.get('model_type', '')}")
 
     with open(os.path.join(save_dir, "config.json"), "w") as f:
         json.dump(config_dict, f, indent=2, ensure_ascii=False)
@@ -186,11 +186,11 @@ def fuse_submodels(model_list, save_dir, torch_dtype=torch.bfloat16, fusion_lamb
         sub_prefix = f"sub_models.{idx}"
         print(f"   ➤ Processing {sub_prefix} ...")
 
-        # 遍历每个 weight
+        ## Iterate each weight
         for k, v in model.state_dict().items():
             merged_state_dict[f"{sub_prefix}.{k}"] = v.to(torch_dtype)
 
-        # lm_head （某些模型没有单独 lm_head）
+        ## lm_head （ lm_head）
         if hasattr(model, "lm_head") and hasattr(model.lm_head, "weight"):
             merged_state_dict[f"{sub_prefix}.lm_head.weight"] = model.lm_head.weight.to(torch_dtype)
 
@@ -206,8 +206,8 @@ def load_fuse_model_tokenizer(model_name):
     model = QwenBoostForCausalLM.from_pretrained(
         model_name,
         torch_dtype="auto",
-        device_map=None,      # ❗❗不要自动放 GPU
-        # low_cpu_mem_usage=True,
+        device_map=None,      ## ❗❗ GPU
+        ## low_cpu_mem_usage=True,
         attn_implementation="flash_attention_2"
     )
 
@@ -215,41 +215,41 @@ def load_fuse_model_tokenizer(model_name):
     return model, tokenizer
 
 def load_fuse_model_tokenizer_vote(model_name, freeze_first_model):
-    # 判断是 qwen2 还是 qwen3：先尝试加载 config 检查
+    ##  qwen2  qwen3： config 
     is_qwen2 = False
     try:
         config = AutoConfig.from_pretrained(model_name)
-        # 优先检查 config 中的 model_type
+        ##  config  model_type
         if hasattr(config, 'model_type') and config.model_type:
             model_type_str = str(config.model_type).lower()
             is_qwen2 = 'qwen2' in model_type_str
-            print(f"🔹 从 config.model_type 识别: {config.model_type} -> {'Qwen2' if is_qwen2 else 'Qwen3'}")
-        # 如果 model_type 无法确定，检查 hidden_size（qwen2.5-3b 通常是 2048）
+            print(f"🔹  config.model_type : {config.model_type} -> {'Qwen2' if is_qwen2 else 'Qwen3'}")
+        ##  model_type ， hidden_size（qwen2.5-3b  2048）
         if not is_qwen2 and hasattr(config, 'hidden_size'):
             hidden_size = config.hidden_size
-            # qwen2.5-3b 的 hidden_size 是 2048，qwen3 通常是 2560 或更大
+            ## qwen2.5-3b  hidden_size  2048，qwen3  2560 
             if hidden_size == 2048:
                 is_qwen2 = True
-                print(f"🔹 从 hidden_size={hidden_size} 推断为 Qwen2")
+                print(f"🔹  hidden_size={hidden_size}  Qwen2")
             elif hidden_size >= 2560:
                 is_qwen2 = False
-                print(f"🔹 从 hidden_size={hidden_size} 推断为 Qwen3")
-        # 如果还是无法确定，检查 architectures
+                print(f"🔹  hidden_size={hidden_size}  Qwen3")
+        ## ， architectures
         if not is_qwen2 and hasattr(config, 'architectures') and config.architectures:
             is_qwen2 = any('qwen2' in str(arch).lower() for arch in config.architectures)
             if is_qwen2:
-                print(f"🔹 从 architectures 识别为 Qwen2")
-        # 最后检查模型路径
+                print(f"🔹  architectures  Qwen2")
+        ## 
         if not is_qwen2:
             is_qwen2 = 'qwen2' in model_name.lower()
             if is_qwen2:
-                print(f"🔹 从模型路径识别为 Qwen2")
+                print(f"🔹 Model Qwen2")
     except Exception as e:
-        # 如果加载 config 失败，根据路径判断
-        print(f"⚠️  加载 config 失败: {e}，使用路径判断")
+        ##  config ，
+        print(f"⚠️   config : {e}，Using")
         is_qwen2 = 'qwen2' in model_name.lower()
     
-    # 根据判断结果导入相应的模块
+    ## 
     if is_qwen2:
         try:
             from EnsembleLLM.EnsembleQwen2LLMBOOST.modeling_qwen2 import QwenBoostForCausalLM
@@ -265,7 +265,7 @@ def load_fuse_model_tokenizer_vote(model_name, freeze_first_model):
                     from EnsembleQwen2LLMBOOST.modeling_qwen2 import QwenBoostForCausalLM
                 except ImportError:
                     raise ImportError("Cannot locate `Qwen2ForEnsemble`. Please check PYTHONPATH.") from exc
-        print("🔹 使用 Qwen2 模型 (vote-base)")
+        print("🔹 Using Qwen2 Model (vote-base)")
     else:
         try:
             from EnsembleLLM.EnsembleQwen3.modeling_qwen3 import QwenBoostForCausalLM
@@ -281,18 +281,18 @@ def load_fuse_model_tokenizer_vote(model_name, freeze_first_model):
                     from EnsembleQwen3.modeling_qwen3 import QwenBoostForCausalLM
                 except ImportError:
                     raise ImportError("Cannot locate `Qwen3ForEnsemble`. Please check PYTHONPATH.") from exc
-        print("🔹 使用 Qwen3 模型 (vote-base)")
+        print("🔹 Using Qwen3 Model (vote-base)")
     
     model = QwenBoostForCausalLM.from_pretrained(
         model_name,
         torch_dtype="auto",
-        device_map=None,      # ❗❗不要自动放 GPU
-        # low_cpu_mem_usage=True,
+        device_map=None,      ## ❗❗ GPU
+        ## low_cpu_mem_usage=True,
         attn_implementation="flash_attention_2"
     )
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    # 如果需要冻结第一个模型（sub_models.0），则将其所有参数的 requires_grad 设置为 False
-    # 处理 freeze_first_model 参数，支持 bool 类型和字符串类型
+    ## （sub_models.0）， requires_grad  False
+    ## Processing freeze_first_model ， bool 
     should_freeze = False
     if isinstance(freeze_first_model, bool):
         should_freeze = freeze_first_model
@@ -307,7 +307,7 @@ def load_fuse_model_tokenizer_vote(model_name, freeze_first_model):
             if name.startswith("sub_models.0"):
                 param.requires_grad = False
                 frozen_count += 1
-        print(f"✅ 已冻结第一个模型 (sub_models.0) 的 {frozen_count} 个参数，这些参数将不参与训练")
+        print(f"✅ Model (sub_models.0)  {frozen_count} ，")
     else:
-        print("ℹ️  未启用冻结第一个模型，所有参数都将参与训练")
+        print("ℹ️  Model，")
     return model, tokenizer

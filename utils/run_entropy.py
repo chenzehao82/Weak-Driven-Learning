@@ -8,7 +8,7 @@ def main():
     
     subparsers = parser.add_subparsers(dest="command", help="compute or merge")
     
-    # 子命令: compute
+    # : compute
     compute_parser = subparsers.add_parser("compute")
     compute_parser.add_argument("--model_path", type=str, required=True, help="Path to model checkpoint")
     compute_parser.add_argument("--data_file", type=str, required=True, help="Path to jsonl data file")
@@ -16,7 +16,7 @@ def main():
     compute_parser.add_argument("--entropy_field", type=str, default="entropy_0", help="Field name (entropy_0, entropy_1, etc.)")
     compute_parser.add_argument("--stage", type=str, default="stage0", help="stage0/stage1/stage2/stage3")
 
-    # 子命令: merge
+    # : merge
     merge_parser = subparsers.add_parser("merge")
     merge_parser.add_argument("--input_files", type=str, nargs="+", required=True, help="List of entropy files to merge")
     merge_parser.add_argument("--output_path", type=str, required=True, help="Merged output path")
@@ -35,7 +35,7 @@ def main():
         )
     
     elif args.command == "merge":
-        # merge 操作不需要分布式，直接运行
+        # merge ，
         merge_entropy_files(args.input_files, args.output_path)
 
 if __name__ == "__main__":

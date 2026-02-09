@@ -11,7 +11,7 @@ from transformers import (
 )
 import pandas as pd
 def apply_chat_template(tokenizer, question):
-    """将输入问题转换为符合 chat 模板的文本"""
+    """Convert input question to chat template format"""
     text = tokenizer.apply_chat_template(
         conversation=[{"role": "user", "content": question}],
         tokenize=False,
@@ -22,17 +22,17 @@ def apply_chat_template(tokenizer, question):
 
 def unwrap_lm_head(lm_head):
     """
-    通用解包函数：支持 Linear / Sequential / CastOutputToFloat 外包等情况
-    返回最内部的 Linear 层。
+    Universal unwrapping function: supports Linear / Sequential / CastOutputToFloat wrapping etc.
+    Return the innermost Linear layer.
     """
-    if hasattr(lm_head, "weight"):  # 直接是 Linear
+    if hasattr(lm_head, "weight"):  ##  Linear
         return lm_head
     elif hasattr(lm_head, "_modules") and len(lm_head._modules) > 0:
-        # 如果是 Sequential 或 CastOutputToFloat 等包装
+        ##  Sequential  CastOutputToFloat 
         first = list(lm_head._modules.values())[0]
         return unwrap_lm_head(first)
     else:
-        raise ValueError(f"无法识别 lm_head 结构: {lm_head.__class__.__name__}")
+        raise ValueError(f"Cannot recognize lm_head structure: {lm_head.__class__.__name__}")
 
 
 def prepare_model_for_int8_training(
@@ -50,16 +50,16 @@ def prepare_model_for_int8_training(
     loaded_in_8bit = getattr(model, "is_loaded_in_8bit", False)
 
     for name, param in model.named_parameters():
-        # freeze base model's layers
+        ## freeze base model's layers
         param.requires_grad = False
 
         if loaded_in_8bit:
-            # cast layer norm in fp32 for stability for 8bit models
+            ## cast layer norm in fp32 for stability for 8-bit models
             if param.ndim == 1 and any(layer_norm_name in name for layer_norm_name in layer_norm_names):
                 param.data = param.data.to(torch.float32)
 
     if loaded_in_8bit and use_gradient_checkpointing:
-        # For backward compatibility
+        ## For backward compatibility
         if hasattr(model, "enable_input_require_grads"):
             model.enable_input_require_grads()
         else:
@@ -69,7 +69,7 @@ def prepare_model_for_int8_training(
 
             model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
 
-        # enable gradient checkpointing for memory efficiency
+        ## enable gradient checkpointing for memory efficiency
         model.gradient_checkpointing_enable()
 
     if hasattr(model, output_embedding_layer_name):
@@ -93,11 +93,11 @@ def prepare_model_for_int8_training(
 def generate_prompt(data_point):
         return f"""Below is an instruction that describes a task. Write a response that appropriately completes the request.  
 
-                ### Instruction:
+                #### Instruction:
                 {data_point["instruction"]}
                 
-                ### Response:
-                {data_point["output"]}""" # noqa: E501
+                #### Response:
+                {data_point["output"]}""" ## noqa: E501
 
 
 def load_data(file_path) -> list:
@@ -110,7 +110,7 @@ def load_data(file_path) -> list:
 
     """
     if not os.path.exists(file_path):
-        raise FileNotFoundError(f"can not find dataset file : {file_path}")
+        raise FileNotFoundError(f"cannot find dataset file: {file_path}")
     json_data = json.load(open(file_path, 'r'))
     return json_data
 
@@ -127,12 +127,12 @@ def format_max_memory(gpu_idx: int, safety_margin_gb: int = 2) -> str:
         return f"{alloc_gb}GiB"
 
 def lm_per_sample_ce(
-    logits: torch.Tensor,   # [B, T, V]
-    labels: torch.Tensor,   # [B, T]
+    logits: torch.Tensor,   ## [B, T, V]
+    labels: torch.Tensor,   ## [B, T]
     pad_token_id: int = -100,
-) -> torch.Tensor:          # [B] 每个样本的平均CE（忽略pad）
+) -> torch.Tensor:          ## [B] eachaverage CE per sample (ignore pad)
     B, T, V = logits.shape
-    # 展平到token级
+    ## token
     ce_token = F.cross_entropy(
         logits.view(B * T, V),
         labels.view(B * T),
@@ -140,50 +140,50 @@ def lm_per_sample_ce(
         reduction='none'
     ).view(B, T)
 
-    # 有效token掩码
-    mask = (labels != pad_token_id).float()  # [B, T]
-    # 防止某样本全是pad
-    valid_cnt = mask.sum(dim=1).clamp_min(1.0)  # [B]
-    ce_per_sample = (ce_token * mask).sum(dim=1) / valid_cnt  # [B]
+    ## Valid token mask
+    mask = (labels != pad_token_id).float()  ## [B, T]
+    ## Prevent sample from being all pad
+    valid_cnt = mask.sum(dim=1).clamp_min(1.0)  ## [B]
+    ce_per_sample = (ce_token * mask).sum(dim=1) / valid_cnt  ## [B]
     return ce_per_sample
 
 
 def lm_weighted_loss(
-    logits: torch.Tensor,   # [B, T, V]
-    labels: torch.Tensor,   # [B, T]
-    weights: torch.Tensor,  # [B]
+    logits: torch.Tensor,   ## [B, T, V]
+    labels: torch.Tensor,   ## [B, T]
+    weights: torch.Tensor,  ## [B]
     pad_token_id: int = -100,
     reduction: str = 'mean',
 ) -> torch.Tensor:
     """
-    带样本权重的LM交叉熵；先做逐样本CE，再按weights做加权聚合。
+    LM cross-entropy with sample weights; first do per-sample CE, then do weighted aggregation by weights.
     """
-    ce_per_sample = lm_per_sample_ce(logits, labels, pad_token_id=pad_token_id)  # [B]
+    ce_per_sample = lm_per_sample_ce(logits, labels, pad_token_id=pad_token_id)  ## [B]
     if reduction == 'none':
         return weights * ce_per_sample
-    # 归一化的加权平均更稳（不受batch大小影响）
+    ## Normalized weighted average is more stable (unaffected by batch size)
     w = weights.clamp_min(1e-8)
     return (w * ce_per_sample).sum() / w.sum()
 
 
-# =========================
-# 工具函数：由上一模型输出生成样本权重（AdaBoost风格）
-# =========================
+## =========================
+## Utility function: generate sample weights from previous model output (AdaBoost style)
+## =========================
 @torch.no_grad()
 def compute_adaboost_weights_from_prev_logits(
-    prev_logits: torch.Tensor,  # [B, T, V]
-    labels: torch.Tensor,       # [B, T]
+    prev_logits: torch.Tensor,  ## [B, T, V]
+    labels: torch.Tensor,       ## [B, T]
     pad_token_id: int = -100,
-    alpha: float = 2.0,         # 放大系数（1~3常用）
+    alpha: float = 2.0,         ## Amplification coefficient (1~3 common)
     w_min: float = 0.2,
     w_max: float = 5.0,
     normalize_by_batch_mean: bool = True,
-) -> torch.Tensor:              # [B]
+) -> torch.Tensor:              ## [B]
     """
-    使用上一模型的逐样本平均CE作为“难度”，生成weights。
-    公式：w_i = exp(alpha * CE_i / mean(CE))（再clip）
+    UsingModelSampleCE“”，weights。
+    Formula: w_i = exp(alpha * CE_i / mean(CE)) (then clip)
     """
-    ce_prev = lm_per_sample_ce(prev_logits, labels, pad_token_id=pad_token_id)  # [B]
+    ce_prev = lm_per_sample_ce(prev_logits, labels, pad_token_id=pad_token_id)  ## [B]
     if normalize_by_batch_mean:
         scale = ce_prev.mean().clamp_min(1e-8)
         weights = torch.exp(alpha * (ce_prev / scale))
@@ -193,56 +193,56 @@ def compute_adaboost_weights_from_prev_logits(
 
 def enable_sft_training_optimizations(model):
     """
-    正确开启 SFT（全参数训练）所需的所有设置。
-    包括：
-      - gradient checkpointing（降低激活显存）
-      - 关闭 use_cache（必须）
-      - 输入梯度（仅全参不需要，LoRA 需要）
+    Correctly enable all settings needed for SFT (full parameter training).
+    Including:
+      - gradient checkpointing (reduce activation memory)
+      - close use_cache (required)
+      - input gradients (not needed for full parameter, needed for LoRA)
     """
-    # 关闭 KV cache，否则 checkpointing 会报错
+    ## Close KV cache, otherwise checkpointing will error
     if hasattr(model.config, "use_cache"):
         model.config.use_cache = False
 
-    # 打开 gradient checkpointing
+    ## Enable gradient checkpointing
     if hasattr(model, "gradient_checkpointing_enable"):
         model.gradient_checkpointing_enable()
 
-    # 有些模型还需要 config.flag
+    ##  config.flag
     if hasattr(model.config, "gradient_checkpointing"):
         model.config.gradient_checkpointing = True
         
 def check_deepspeed_status(trainer):
-    """改进的DeepSpeed状态检查"""
+    """Improved DeepSpeed status check"""
     try:
-        # 方法1: 检查trainer是否使用了deepspeed
+        ## Method 1: Check if trainer uses deepspeed
         if hasattr(trainer, 'is_deepspeed_enabled') and trainer.is_deepspeed_enabled:
-            print("✓ DeepSpeed已启用")
+            print("✓ DeepSpeed")
             return True
             
-        # 方法2: 检查模型是否被DeepSpeed包装
+        ## Method 2: Check if model is wrapped by DeepSpeed
         model = trainer.model
         if hasattr(model, 'module') and hasattr(model.module, 'engine'):
             engine = model.module.engine
-            print("=== DeepSpeed状态 ===")
-            print(f"ZeRO阶段: {engine.zero_optimization_stage()}")
-            print(f"优化器: {type(engine.optimizer).__name__}")
+            print("=== DeepSpeed ===")
+            print(f"ZeRO: {engine.zero_optimization_stage()}")
+            print(f": {type(engine.optimizer).__name__}")
             return True
             
-        # 方法3: 直接检查accelerate状态
+        ## Method 3: Directly check accelerate status
         from accelerate.utils import is_deepspeed_available
         if is_deepspeed_available():
             try:
                 from deepspeed import comm as dist
                 if dist.is_initialized():
-                    print("✓ DeepSpeed分布式已初始化")
+                    print("✓ DeepSpeed")
                     return True
             except:
                 pass
         
-        print("✗ DeepSpeed未正确初始化")
+        print("✗ DeepSpeed")
         return False
     except Exception as e:
-        print(f"✗ 检查DeepSpeed状态失败: {e}")
+        print(f"✗ DeepSpeed: {e}")
         return False
 
 def load_model_tokenizer(model_name):
@@ -250,13 +250,13 @@ def load_model_tokenizer(model_name):
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         torch_dtype="auto",
-        device_map=None,      # ❗❗不要自动放 GPU
+        device_map=None,      ## ❗❗ GPU
         low_cpu_mem_usage=True,
         attn_implementation="flash_attention_2"
     )
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-    # qwen2.5 use
+    ## qwen2.5 use
     if "Qwen2.5" in model_name:
         print("Qwen2.5 model detected")
         origin_eos_token_id = tokenizer.eos_token_id
@@ -288,8 +288,8 @@ def load_data(file_path):
 
 def load_entropy_df(file_path: str) -> pd.DataFrame:
     """
-    读取熵结果 jsonl:
-    每行至少包含: { "idx": ..., "entropy_0": ..., "entropy_1": ... }
+    Read entropy results jsonl:
+    Each line must contain at least: { "idx": ..., "entropy_0": ..., "entropy_1": ... }
     """
     records = []
     with open(file_path, "r", encoding="utf-8") as fin:
@@ -301,27 +301,27 @@ def load_entropy_df(file_path: str) -> pd.DataFrame:
     df = pd.DataFrame(records)
     assert "idx" in df.columns, "entropy file must contain 'idx'"
 
-    # 兼容两种格式：
-    # 1）stage1/2/3 使用的：包含 entropy_0 / entropy_1 (/ entropy_2)
-    # 2）stage4 使用的：仅包含 entropy_2 / entropy_3，此时将其映射为 entropy_0 / entropy_1 以复用采样公式
+    ## Compatible with two formats:
+    ## 1）stage1/2/3 ： entropy_0 / entropy_1 (/ entropy_2)
+    ## 2）stage4 used: contains only entropy_2 / entropy_3, map them to entropy_0 / entropy_1 to reuse sampling formula
     
     if "entropy_0" in df.columns and "entropy_1" in df.columns:
         return df
 
     if "entropy_1" in df.columns and "entropy_2" in df.columns:
         df = df.copy()
-        # 映射为 AdaBoost 需要的两个熵值：
-        # entropy_0 = entropy_2 (之前的状态)
-        # entropy_1 = entropy_3 (当前状态)
+        ## Map to two entropy values needed by AdaBoost:
+        ## entropy_0 = entropy_2 ()
+        ## entropy_1 = entropy_3 ()
         df["entropy_0"] = df["entropy_1"]
         df["entropy_1"] = df["entropy_2"]
         return df
-    # 仅有 entropy_2 / entropy_3 的情况（例如 entropy_2_3_merged.jsonl，用于 Stage4 AdaBoost）
+    ## Case with only entropy_2 / entropy_3 (e.g., entropy_2_3_merged.jsonl, for Stage4 AdaBoost)
     if "entropy_2" in df.columns and "entropy_3" in df.columns:
         df = df.copy()
-        # 映射为 AdaBoost 需要的两个熵值：
-        # entropy_0 = entropy_2 (之前的状态)
-        # entropy_1 = entropy_3 (当前状态)
+        ## Map to two entropy values needed by AdaBoost:
+        ## entropy_0 = entropy_2 ()
+        ## entropy_1 = entropy_3 ()
         df["entropy_0"] = df["entropy_2"]
         df["entropy_1"] = df["entropy_3"]
         return df

@@ -1,8 +1,8 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+##!/usr/bin/env python3
+## -*- coding: utf-8 -*-
 """
-Ensemble LLM 训练脚本
-支持三阶段训练流程：Stage1 (m1) -> Stage2 (m2) -> Stage3 (融合 m1+m2)
+Ensemble LLM training script
+Support three-stage training process: Stage1 (m1) -> Stage2 (m2) -> Stage3 (fuse m1+m2)
 """
 
 import argparse
@@ -21,13 +21,13 @@ from datasets import Dataset
 from transformers import AutoTokenizer
 from accelerate import PartialState
 
-# Add parent directory to path to import utils
+## Add parent directory to path to import utils
 _current_dir = Path(__file__).parent
 _parent_dir = _current_dir.parent
 if str(_parent_dir) not in sys.path:
     sys.path.insert(0, str(_parent_dir))
 
-# Import utility functions
+## Import utility functions
 try:
     from utils.utils import load_model_tokenizer, load_data, load_entropy_df
     from utils.fuse_models import (
@@ -39,11 +39,11 @@ try:
     )
     from utils.load_dataset import load_math_dataset_jsonl
 except ImportError as e:
-    print(f"错误: 无法导入工具函数: {e}")
-    print("请确保:")
-    print("  1. utils/ 目录存在于项目根目录")
-    print("  2. Python 路径正确设置")
-    print("  3. 所有必要的模块文件存在")
+    print(f"Error: Cannot import utility functions: {e}")
+    print("Please ensure:")
+    print("  1. utils/ Directory exists in project root")
+    print("  2. Python path is correctly set")
+    print("  3. All necessary module files exist")
     raise
 
 PREFIX_CHECKPOINT_DIR = "checkpoint"
@@ -51,7 +51,7 @@ _re_checkpoint = re.compile(r"^" + PREFIX_CHECKPOINT_DIR + r"\-(\d+)$")
 
 
 def get_last_checkpoint(folder):
-    """获取最新的 checkpoint"""
+    """Get latest checkpoint"""
     if not os.path.isdir(folder):
         return None
     content = os.listdir(folder)
@@ -82,7 +82,7 @@ def build_weighted_dataset(
     dataset_type: str = "brownboost",
 ) -> Dataset:
     """
-    根据 entropy 信息构建加权数据集
+    Build weighted dataset based on entropy information
     """
     if dataset_type == "adaboost":
         entropy_df = compute_adaboost_sampling_weights(
@@ -150,11 +150,11 @@ def build_weighted_dataset(
 
 
 def train_stage1(args, distributed_state: PartialState):
-    """Stage 1: 普通 SFT 训练得到 m1"""
+    """Stage 1: Regular SFT training to get m1"""
     stage1_out = os.path.join(args.output_dir, "stage1_m1")
     if distributed_state.is_main_process:
         os.makedirs(stage1_out, exist_ok=True)
-        print("\n=========== Stage1 配置参数 ===========")
+        print("\n=========== Stage1 Configuration ParametersParameters ===========")
         for k, v in vars(args).items():
             print(f"{k}: {v}")
         print("======================================\n")
@@ -176,7 +176,7 @@ def train_stage1(args, distributed_state: PartialState):
     )
 
     if distributed_state.is_main_process:
-        print(f"Stage1 数据加载完成，共读取样本数：{len(dataset)}")
+        print(f"Stage1 data loading complete, total samples read:{len(dataset)}")
 
     dataset = dataset.shuffle(seed=42)
     max_step = (
@@ -226,7 +226,7 @@ def train_stage1(args, distributed_state: PartialState):
     )
 
     if distributed_state.is_main_process:
-        print("\n=========== Stage1 开始训练 (m1) ===========\n")
+        print("\n=========== Starting Stage1 training (m1) ===========\n")
 
     trainer.train(resume_from_checkpoint=checkpoint)
     distributed_state.wait_for_everyone()
@@ -234,11 +234,11 @@ def train_stage1(args, distributed_state: PartialState):
 
 
 def train_stage2(args, distributed_state: PartialState, m1_dir: str):
-    """Stage 2: 用熵加权数据集，从 m1 继续训练得到 m2"""
+    """Stage 2: Use entropy-weighted dataset, continue training from m1 to get m2"""
     from Trainer.sft_runner import run_sft
 
     if distributed_state.is_main_process:
-        print("\n=========== Stage2: 构建 weighted dataset & 从 m1 继续训练得到 m2 ===========")
+        print("\n=========== Stage2:  weighted dataset &  m1  m2 ===========")
 
     dataset = load_data(args.data_files)
     entropy_df = load_entropy_df(args.entropy_results)
@@ -283,23 +283,23 @@ def train_stage2(args, distributed_state: PartialState, m1_dir: str):
     )
 
     if distributed_state.is_main_process:
-        print(f"Stage2 训练完成，m2 保存在: {stage2_out}")
+        print(f"Stage2 training complete, m2 saved in: {stage2_out}")
     distributed_state.wait_for_everyone()
     return stage2_out
 
 
 def train_stage3(args, distributed_state: PartialState, m1_dir: str, m2_dir: str, dataset_type: str = "adaboost"):
-    """Stage 3: 融合 m1 和 m2，再用加权数据集训练"""
+    """Stage 3: Fuse m1 and m2, then train with weighted dataset"""
     from Trainer.sft_runner import run_sft
 
-    # 融合 m1 和 m2
+    ##  m1  m2
     ensemble_dir = os.path.join(args.output_dir, "ensemble_m1_m2")
     if distributed_state.is_main_process:
-        print("\n=========== Stage3: 融合 m1 & m2 ==========")
-        print(f"融合模型:")
+        print("\n=========== Stage3: Fuse m1 & m2 ==========")
+        print(f"Ensemble model:")
         print(f"  - m1: {m1_dir}")
         print(f"  - m2: {m2_dir}")
-        print(f"  - 保存到: {ensemble_dir}")
+        print(f"  - Save to: {ensemble_dir}")
         
         if args.model_type == "wmss":
             print("Model Type: WMSS (Weighted Model Selection and Synthesis)")
@@ -310,7 +310,7 @@ def train_stage3(args, distributed_state: PartialState, m1_dir: str, m2_dir: str
             )
         else:
             raise ValueError(f"Unsupported model type: {args.model_type}")
-        print(f"✓ 融合完成，ensemble 初始权重保存在: {ensemble_dir}")
+        print(f"✓ Fusion complete, ensemble initial weights saved in: {ensemble_dir}")
     distributed_state.wait_for_everyone()
 
     dataset = load_data(args.data_files)
@@ -361,13 +361,13 @@ def train_stage3(args, distributed_state: PartialState, m1_dir: str, m2_dir: str
     )
 
     if distributed_state.is_main_process:
-        print(f"Stage3 训练完成，最终模型保存在: {stage3_out}")
+        print(f"Stage3 training complete, final model saved in: {stage3_out}")
     distributed_state.wait_for_everyone()
     return stage3_out
 
 
 def _str2bool(v):
-    """解析布尔值字符串"""
+    """Parse boolean string"""
     if isinstance(v, bool):
         return v
     v = v.lower()
@@ -379,11 +379,11 @@ def _str2bool(v):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Ensemble LLM 三阶段训练")
+    parser = argparse.ArgumentParser(description="Ensemble LLM three-stage training")
 
     parser.add_argument("--local_rank", type=int, default=-1, help="Local rank for distributed training")
 
-    # 基础模型 & 通用训练超参
+    ## Base model # Base model  &  common training hyperparameters common training hyperparameters
     parser.add_argument("--model-name", type=str, required=True, help="base HF model name or local path")
     parser.add_argument("--max-seq-length", type=int, default=2048)
     parser.add_argument("--per-device-train-batch-size", type=int, default=1)
@@ -395,13 +395,13 @@ def parse_args():
     parser.add_argument("--wandb-run-name", type=str, default=None)
     parser.add_argument("--use-chat-template", type=str, default="auto", help="auto/true/false")
 
-    # Stage1：普通 SFT
+    ## Stage1: Regular SFT
     parser.add_argument("--stage1-data-path", type=str, required=True, help="jsonl for math dataset used in stage1")
     parser.add_argument("--stage1-num-epochs", type=int, default=1)
 
-    # Stage2/3：熵采样数据
+    ## Stage2/3: Entropy sampling data
     parser.add_argument("--data-files", type=str, required=True, help="training data with `idx` for entropy sampling")
-    parser.add_argument("--entropy-results", type=str, default=None, help="entropy 文件路径")
+    parser.add_argument("--entropy-results", type=str, default=None, help="entropy file path")
 
     parser.add_argument("--stage2-num-epochs", type=int, default=1)
     parser.add_argument("--stage3-num-epochs", type=int, default=1)
@@ -409,7 +409,7 @@ def parse_args():
     parser.add_argument("--sample-multiplier-stage2", type=float, default=1.0)
     parser.add_argument("--sample-multiplier-stage3", type=float, default=1.0)
 
-    # BrownBoost 超参
+    ## BrownBoost hyperparameters
     parser.add_argument("--alpha", type=float, default=0.2, help="weight for H0 term")
     parser.add_argument("--beta", type=float, default=0.7, help="weight for -ΔH term (improvement)")
     parser.add_argument("--gamma", type=float, default=0.1, help="weight for +ΔH term (rebound)")
@@ -420,21 +420,21 @@ def parse_args():
     parser.add_argument("--lambda-time", type=float, default=1.0)
     parser.add_argument("--lambda-easy", type=float, default=1.0)
 
-    # 阶段选择
-    parser.add_argument("--stage", type=int, choices=[1, 2, 3], required=True, help="指定要运行的阶段")
-    parser.add_argument("--m1-path", type=str, default=None, help="Stage 2/3 需要的 m1 模型路径")
-    parser.add_argument("--m2-path", type=str, default=None, help="Stage 3 需要的 m2 模型路径")
+    ## Stage selection
+    parser.add_argument("--stage", type=int, choices=[1, 2, 3], required=True, help="Specify which stage to run")
+    parser.add_argument("--m1-path", type=str, default=None, help="m1 model path needed for Stage 2/3")
+    parser.add_argument("--m2-path", type=str, default=None, help="m2 model path needed for Stage 3")
 
     parser.add_argument("--model-type", type=str, default="wmss",
                         choices=["wmss"],
-                        help="指定要使用的模型类型 (wmss: Weighted Model Selection and Synthesis)")
-    parser.add_argument("--stage3-name", type=str, default="stage3_fused_brownboost", help="Stage 3 最终模型保存目录名")
-    parser.add_argument("--freeze-first-model", type=_str2bool, default=False, help="是否冻住第一个模型")
-    parser.add_argument("--fusion-lambda", type=float, default=0.5, help="融合权重")
+                        help="Specify which model type to use (wmss: Weighted Model Selection and Synthesis)")
+    parser.add_argument("--stage3-name", type=str, default="stage3_fused_brownboost", help="Stage 3 final model save directory name")
+    parser.add_argument("--freeze-first-model", type=_str2bool, default=False, help="Whether to freeze the first model")
+    parser.add_argument("--fusion-lambda", type=float, default=0.5, help="Fusion weight")
 
     args, unknown = parser.parse_known_args()
     if unknown:
-        print(f"忽略未知参数: {unknown}")
+        print(f"Ignoring unknown parameters: {unknown}")
     return args
 
 
@@ -442,11 +442,11 @@ def main():
     args = parse_args()
     distributed_state = PartialState()
 
-    # Stage 1: SFT (m1)
+    ## Stage 1: SFT (m1)
     if args.stage == 1:
         if distributed_state.is_main_process:
             print("\n" + "="*60)
-            print("Stage 1: 普通 SFT 训练 -> m1")
+            print("Stage 1: Regular SFT training -> m1")
             print("="*60 + "\n")
         
         m1_dir = train_stage1(args, distributed_state)
@@ -457,14 +457,14 @@ def main():
             torch.cuda.empty_cache()
         
         if distributed_state.is_main_process:
-            print(f"\n✓ Stage 1 完成，模型保存在: {m1_dir}")
+            print(f"\n✓ Stage 1 complete, model saved in: {m1_dir}")
 
-    # Stage 2: Weighted SFT (m2)
+    ## Stage 2: Weighted SFT (m2)
     elif args.stage == 2:
         if not args.m1_path:
-            raise ValueError("Stage 2 需要提供 --m1-path 参数")
+            raise ValueError("Stage 2 needs to provide --m1-path parameter")
         if not args.entropy_results:
-            raise ValueError("Stage 2 需要提供 --entropy-results 参数")
+            raise ValueError("Stage 2 needs to provide --entropy-results parameter")
 
         if not os.path.isabs(args.m1_path):
             m1_dir = os.path.join(args.output_dir, args.m1_path)
@@ -478,10 +478,10 @@ def main():
         
         if distributed_state.is_main_process:
             print("\n" + "="*60)
-            print("Stage 2: 熵加权数据集训练 -> m2")
+            print("Stage 2: Entropy-weighted dataset training -> m2")
             print("="*60 + "\n")
-            print(f"从 m1 路径加载: {m1_dir}")
-            print(f"使用熵文件: {args.entropy_results}")
+            print(f"Load from m1 path: {m1_dir}")
+            print(f"Use entropy file: {args.entropy_results}")
         
         m2_dir = train_stage2(args, distributed_state, m1_dir)
         
@@ -491,14 +491,14 @@ def main():
             torch.cuda.empty_cache()
 
         if distributed_state.is_main_process:
-            print(f"\n✓ Stage 2 完成，模型保存在: {m2_dir}")
+            print(f"\n✓ Stage 2 complete, model saved in: {m2_dir}")
 
-    # Stage 3: Fuse & BrownBoost
+    ## Stage 3: Fuse & BrownBoost
     elif args.stage == 3:
         if not args.m1_path or not args.m2_path:
-            raise ValueError("Stage 3 需要提供 --m1-path 和 --m2-path 参数")
+            raise ValueError("Stage 3 needs to provide --m1-path and --m2-path parameters")
         if not args.entropy_results:
-            raise ValueError("Stage 3 需要提供 --entropy-results 参数")
+            raise ValueError("Stage 3 needs to provide --entropy-results parameter")
 
         if not os.path.isabs(args.m1_path):
             m1_dir = os.path.join(args.output_dir, args.m1_path)
@@ -522,11 +522,11 @@ def main():
 
         if distributed_state.is_main_process:
             print("\n" + "="*60)
-            print("Stage 3: 融合 m1 & m2，BrownBoost 训练")
+            print("Stage 3: Fuse m1 Stage 3: Fuse m1 Stage 3:  m1 & m2，BrownBoost  m2, BrownBoost training m2, BrownBoost training")
             print("="*60 + "\n")
-            print(f"m1 路径: {m1_dir}")
-            print(f"m2 路径: {m2_dir}")
-            print(f"使用熵文件: {args.entropy_results}")
+            print(f"m1 path: {m1_dir}")
+            print(f"m2 path: {m2_dir}")
+            print(f"Use entropy file: {args.entropy_results}")
 
         final_dir = train_stage3(args, distributed_state, m1_dir, m2_dir)
         
@@ -536,7 +536,7 @@ def main():
             torch.cuda.empty_cache()
 
         if distributed_state.is_main_process:
-            print(f"\n✓ Stage 3 完成，最终模型保存在: {final_dir}")
+            print(f"\n✓ Stage 3 complete, final model saved in: {final_dir}")
 
 
 if __name__ == "__main__":

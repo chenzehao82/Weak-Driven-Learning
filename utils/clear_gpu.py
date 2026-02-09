@@ -1,8 +1,8 @@
-#!/usr/bin/env python3
+##!/usr/bin/env python3
 """
-GPU 内存清理工具
+GPU 
 
-用法：
+：
     python clear_gpu.py
 """
 
@@ -12,55 +12,55 @@ import time
 
 
 def clear_gpu_memory():
-    """彻底清理 GPU 内存"""
+    """Thoroughly clean GPU memory"""
     print("=" * 60)
-    print("开始清理 GPU 内存...")
+    print("Starting GPU memory cleaning...")
     print("=" * 60)
     
     if not torch.cuda.is_available():
-        print("未检测到 CUDA 设备")
+        print("CUDA device not detected")
         return
     
-    # 打印清理前的状态
-    print("\n清理前 GPU 显存使用情况:")
+    ## 
+    print("\nBefore cleanup GPU memory usage:")
     for i in range(torch.cuda.device_count()):
         mem_allocated = torch.cuda.memory_allocated(i) / 1024**3
         mem_reserved = torch.cuda.memory_reserved(i) / 1024**3
-        print(f"  GPU {i}: 已分配 {mem_allocated:.2f}GB, 已保留 {mem_reserved:.2f}GB")
+        print(f"  GPU {i}: Allocated {mem_allocated:.2f}GB, Reserved {mem_reserved:.2f}GB")
     
-    # 执行清理
-    print("\n执行清理操作...")
+    ## 
+    print("\nExecuting cleanup operations...")
     
-    # 1. 同步所有 CUDA 流
+    ## 1. Synchronize all CUDA streams
     for i in range(torch.cuda.device_count()):
         with torch.cuda.device(i):
             torch.cuda.synchronize()
     
-    # 2. 清空缓存
+    ## 2. Empty cache
     torch.cuda.empty_cache()
     
-    # 3. 强制垃圾回收
+    ## 3. Force garbage collection
     gc.collect()
     
-    # 4. 再次清空缓存
+    ## 4. Empty cache
     time.sleep(1)
     torch.cuda.empty_cache()
     
-    # 5. 再次垃圾回收
+    ## 5. Another garbage collection
     gc.collect()
     
-    # 6. 最后一次清空
+    ## 6. Final empty
     torch.cuda.empty_cache()
     
-    # 打印清理后的状态
-    print("\n清理后 GPU 显存使用情况:")
+    ## 
+    print("\nAfter cleanup GPU memory usage:")
     for i in range(torch.cuda.device_count()):
         mem_allocated = torch.cuda.memory_allocated(i) / 1024**3
         mem_reserved = torch.cuda.memory_reserved(i) / 1024**3
-        print(f"  GPU {i}: 已分配 {mem_allocated:.2f}GB, 已保留 {mem_reserved:.2f}GB")
+        print(f"  GPU {i}: Allocated {mem_allocated:.2f}GB, Reserved {mem_reserved:.2f}GB")
     
     print("\n" + "=" * 60)
-    print("✓ GPU 内存清理完成")
+    print("✓ GPU memory cleanup complete")
     print("=" * 60)
 
 

@@ -1,15 +1,15 @@
 import numpy as np
 import pandas as pd
-# ============================
+## ============================
 def compute_adaboost_sampling_weights(entropy_df: pd.DataFrame,
                              alpha: float,
                              beta: float,
                              gamma: float) -> pd.DataFrame:
     """
-    根据 entropy_0 / entropy_1 计算：
+     entropy_0 / entropy_1 ：
         delta_entropy = entropy_1 - entropy_0
-        sampling_weight = p_i (归一化概率)
-    返回带 'sampling_weight' 列的 DataFrame
+        sampling_weight = p_i ()
+     'sampling_weight'  DataFrame
     """
     df = entropy_df.copy()
     H0 = df["entropy_0"].to_numpy(dtype=np.float64)
@@ -17,7 +17,7 @@ def compute_adaboost_sampling_weights(entropy_df: pd.DataFrame,
     dH = H1 - H0
     df["delta_entropy"] = dH
 
-    # Z1, Z2, Z3
+    ## Z1, Z2, Z3
     Z1 = H0.sum()
     Z2 = (-dH[dH < 0]).sum()
     Z3 = (dH[dH > 0]).sum()
@@ -41,21 +41,21 @@ def compute_adaboost_sampling_weights(entropy_df: pd.DataFrame,
 
 def compute_sampling_weights_brownboost_style(
     entropy_df: pd.DataFrame,
-    alpha: float = 1.0,        # 当前难度权重
-    beta: float = 1.0,         # 进步程度权重
-    gamma: float = 1.0,        # 时间惩罚权重
+    alpha: float = 1.0,        ## Weight
+    beta: float = 1.0,         ## Weight
+    gamma: float = 1.0,        ## Weight
     easy_quantile: float = 0.2,
     hard_quantile: float = 0.8,
-    patience: int = 2,         # 对“极难”题的容忍轮数
-    easy_patience: int = 2,    # 对“极简”题的容忍轮数
-    lambda_time: float = 1.0,  # 极难题时间惩罚强度
-    lambda_easy: float = 1.0,  # 极简题惩罚强度
+    patience: int = 2,         ## “”
+    easy_patience: int = 2,    ## “”
+    lambda_time: float = 1.0,  ## 
+    lambda_easy: float = 1.0,  ## 
 ) -> pd.DataFrame:
     """
-    要求 entropy_df 至少包含列:
+     entropy_df :
       - 'idx'
       - 'entropy_0', 'entropy_1', 'entropy_2'
-    返回: 在原 DataFrame 上新增一列 'sampling_weight'
+    :  DataFrame  'sampling_weight'
     """
     df = entropy_df.copy()
 
@@ -64,22 +64,22 @@ def compute_sampling_weights_brownboost_style(
     e2 = df["entropy_2"].to_numpy()
     eps = 1e-8
 
-    # -------- 1) 定义 easy / hard 阈值（基于当前 entropy_2 分布） --------
+    ## -------- 1)  easy / hard （ entropy_2 ） --------
     easy_th = np.quantile(e2, easy_quantile)
     hard_th = np.quantile(e2, hard_quantile)
 
-    # -------- 2) 当前难度因子 d_i：中~偏难区间权重最高 --------
+    ## -------- 2)  d_i：~ --------
     difficulty = (e2 - easy_th) / (hard_th - easy_th + eps)
-    difficulty = np.clip(difficulty, 0.0, 1.0) + eps  # 避免全 0
+    difficulty = np.clip(difficulty, 0.0, 1.0) + eps  ##  0
 
-    # -------- 3) 进步因子 trend_i：考虑 entropy_0 -> entropy_2 的变化 --------
-    improve = e0 - e2  # >0 说明在变简单
+    ## -------- 3)  trend_i： entropy_0 -> entropy_2  --------
+    improve = e0 - e2  ## >0 
     improve_std = np.std(improve) + eps
-    k_trend = 0.5  # 你可以调大调小
+    k_trend = 0.5  ## 
     trend = 1.0 + k_trend * (improve / improve_std)
     trend = np.clip(trend, 0.1, 10.0)
 
-    # -------- 4) BrownBoost 风格的时间惩罚：长期极难的题被“放弃” --------
+    ## -------- 4) BrownBoost ：“” --------
     hard_rounds = (
         (e0 > hard_th).astype(int)
         + (e1 > hard_th).astype(int)
@@ -87,7 +87,7 @@ def compute_sampling_weights_brownboost_style(
     )
     time_penalty = np.exp(-lambda_time * np.maximum(0, hard_rounds - patience))
 
-    # -------- 5) 长期简单惩罚：多轮都很简单的题降权 --------
+    ## -------- 5) ： --------
     easy_rounds = (
         (e0 < easy_th).astype(int)
         + (e1 < easy_th).astype(int)
@@ -95,10 +95,10 @@ def compute_sampling_weights_brownboost_style(
     )
     easy_penalty = np.exp(-lambda_easy * np.maximum(0, easy_rounds - easy_patience))
 
-    # -------- 6) 综合权重 --------
+    ## -------- 6)  --------
     raw_w = (difficulty ** alpha) * (trend ** beta) * (time_penalty ** gamma) * (easy_penalty)
 
-    # 避免全 0
+    ##  0
     raw_w = np.maximum(raw_w, eps)
     raw_w = raw_w / raw_w.sum()
 

@@ -4,22 +4,22 @@ from transformers import AutoTokenizer
 
 def load_math_dataset_jsonl(data_path: str, tokenizer: AutoTokenizer, use_chat_template: bool = None):
     """
-    加载 JSONL 格式的数学数据集并处理成指定格式
+    Load JSONL format math dataset and process to specified format
     
     Args:
-        data_path: 数据集路径，支持 .jsonl 格式
-        tokenizer: AutoTokenizer 实例
-        use_chat_template: 是否使用 chat_template 格式化（默认 None，自动判断）
-                          - None: 自动判断（math_10k 不使用，其他使用）
-                          - True: 适用于需要系统提示词的场景（如 AM 数据集）
-                          - False: 适用于已经格式化好的数据（如 math_10k）
+        data_path: Dataset path, supports .jsonl format
+        tokenizer: AutoTokenizer instance
+        use_chat_template: Whether to use chat_template for formatting (default None, auto-detect)
+                          - None: auto-detect (math_10k doesn't use, others use)
+                          - True: for scenarios requiring system prompt (e.g., AM datasets)
+                          - False: for already formatted data (e.g., math_10k)
         
     Returns:
-        Dataset: 包含 'prompt' 和 'completion' 字段的数据集
+        Dataset:  'prompt'  'completion' Dataset
     """
-    # 自动判断是否使用 chat_template
+    ## Auto-detect whether to use chat_template
     if use_chat_template is None:
-        # 不使用 chat_template 的数据集（已经格式化好的简单数据集）
+        ## Datasets that don't use chat_template (already formatted simple datasets)
         simple_datasets = ["math_10k", "gsm8k", "svamp", "mawps"]
         use_chat_template = not any(ds in data_path.lower() for ds in simple_datasets)
     
@@ -27,23 +27,23 @@ def load_math_dataset_jsonl(data_path: str, tokenizer: AutoTokenizer, use_chat_t
     eos_token = tokenizer.decode(tokenizer.eos_token_id)
     data_list = []
     
-    print(f'开始加载数学数据集: {data_path}')
-    print(f'使用 chat_template: {use_chat_template}')
+    print(f'Starting to load math dataset: {data_path}')
+    print(f'Use chat_template: {use_chat_template}')
     
-    # 加载 JSONL 数据
+    ## Load JSONL data
     with open(data_path, 'r', encoding='utf-8') as f:
         for idx, line in enumerate(f):
             try:
                 item = json.loads(line.strip())
                 
-                # 检测数据格式：AM格式 (messages) 或 简单格式 (prompt/completion)
+                ## Detect data format: AM format (messages) or simple format (prompt/completion)
                 if "messages" in item:
-                    # AM 数据集格式: {"messages": [{"role": "user", ...}, {"role": "assistant", ...}]}
+                    ## AM dataset format: {"messages": [{"role": "user", ...}, {"role": "assistant", ...}]}
                     messages = item.get("messages", [])
                     if len(messages) < 2:
                         continue
                     
-                    # 提取 user 和 assistant 消息
+                    ## Extract user and assistant messages
                     user_msg = next((m for m in messages if m.get("role") == "user"), None)
                     assistant_msg = next((m for m in messages if m.get("role") == "assistant"), None)
                     
@@ -51,17 +51,17 @@ def load_math_dataset_jsonl(data_path: str, tokenizer: AutoTokenizer, use_chat_t
                         continue
                     
                     raw_prompt = user_msg.get("content", "").strip()
-                    # 对 code 任务：completion 优先使用 info.answer_content（结构化字段），不要用 assistant.content（通常含 <think>）
+                    ## For code tasks: completion prioritizes info.answer_content (structured field), don't use assistant.content (usually contains <think>）
                     info = user_msg.get("info", {}) if isinstance(user_msg, dict) else {}
                     source = info.get("source", "")
                     code_sources = {"codeio", "OpenCoder", "OpenCoderStage2", "prime"}
 
                     if source in code_sources:
-                        # answer_content 可能在 user_msg.info 或 assistant_msg.info，做兜底
+                        ## answer_content may be in user_msg.info or assistant_msg.info, fallback
                         answer_content = info.get("answer_content")
                         if not answer_content and isinstance(assistant_msg, dict):
                             answer_content = assistant_msg.get("info", {}).get("answer_content")
-                        # 进一步兜底：如果你的预处理脚本写入了 extracted_code，也可作为训练目标
+                        ## Further fallback: if your preprocessing script writes extracted_code, can also be used as training target
                         if not answer_content and "extracted_code" in item:
                             answer_content = item.get("extracted_code")
                         raw_completion = (answer_content or "").strip()
@@ -69,30 +69,30 @@ def load_math_dataset_jsonl(data_path: str, tokenizer: AutoTokenizer, use_chat_t
                         raw_completion = assistant_msg.get("content", "").strip()
                     
                 else:
-                    # 简单格式: {"prompt": "...", "completion": "..."}
+                    ## Simple format: {"prompt": "...", "completion": "..."}
                     raw_prompt = item.get("prompt", "").strip()
                     raw_completion = item.get("completion", "").strip()
                 
-                # 跳过空数据
+                ## Skip empty data
                 if not raw_prompt or not raw_completion:
                     continue
                 
-                # 根据参数决定是否使用 chat_template
+                ## Decide whether to use chat_template based on parameter
                 if use_chat_template:
-                    # 构造 user message，使用原始 prompt 作为问题内容
+                    ## Construct user message, use original prompt as question content
                     user_message = {"role": "user", "content": raw_prompt}
                     
-                    # 使用 apply_chat_template 格式化 prompt，添加 system prompt
+                    ## Use apply_chat_template to format prompt, add system prompt
                     prompt = tokenizer.apply_chat_template(
                         [{"role": "system", "content": system_prompt}, user_message],
                         tokenize=False,
                         add_generation_prompt=True
                     )
                 else:
-                    # 直接使用原始 prompt（已经格式化好的数据）
+                    ## Use original prompt directly (already formatted data)
                     prompt = raw_prompt
                 
-                # 构造 completion（原始答案 + eos_token）
+                ## Construct completion (original answer + eos_token)
                 completion = raw_completion + eos_token
                 
                 data_list.append({
@@ -101,20 +101,20 @@ def load_math_dataset_jsonl(data_path: str, tokenizer: AutoTokenizer, use_chat_t
                 })
                 
             except json.JSONDecodeError as e:
-                print(f"跳过第 {idx} 行，JSON 解析错误: {e}")
+                print(f"Skip line, JSON parsing error:: {e}")
                 continue
             except Exception as e:
-                print(f"跳过第 {idx} 行，错误: {e}")
+                print(f"Skip line, error:: {e}")
                 continue
     
-    print(f'成功处理 {len(data_list)} 条数据')
+    print(f'Successfully processed {len(data_list)} ')
     
-    # 打印第一条数据示例
+    ## 
     if data_list:
-        print("\n示例数据（第 1 条）：")
+        print("\nExample data (first 1 item):")
         print("=" * 80)
-        print(f"Prompt (前300字符): {data_list[0]['prompt'][:300]}...")
-        print(f"Completion (前200字符): {data_list[0]['completion'][:200]}...")
+        print(f"Prompt (300): {data_list[0]['prompt'][:300]}...")
+        print(f"Completion (200): {data_list[0]['completion'][:200]}...")
         print("=" * 80)
     
     return Dataset.from_list(data_list)
@@ -122,18 +122,18 @@ def load_math_dataset_jsonl(data_path: str, tokenizer: AutoTokenizer, use_chat_t
 
 def load_code_dataset_jsonl(data_path: str, tokenizer: AutoTokenizer, use_chat_template: bool = False):
     """
-    加载 JSONL 格式的代码数据集并处理成 prompt/completion
+    Load JSONL format code dataset and process to prompt/completion
     
-    预期数据格式（与 code.py 输出一致）：
+    Expected data format (consistent with code.py output):
         {"messages": [{"role": "user", "content": ...}, {"role": "assistant", "content": ...}]}
-    或简洁格式：
+    Or simple format:
         {"prompt": "...", "completion": "..."}
     """
     eos_token = tokenizer.decode(tokenizer.eos_token_id)
     data_list = []
 
-    print(f'开始加载代码数据集: {data_path}')
-    print(f'使用 chat_template: {use_chat_template}')
+    print(f'Dataset: {data_path}')
+    print(f'Use chat_template: {use_chat_template}')
 
     with open(data_path, 'r', encoding='utf-8') as f:
         for idx, line in enumerate(f):
@@ -175,16 +175,16 @@ def load_code_dataset_jsonl(data_path: str, tokenizer: AutoTokenizer, use_chat_t
             except json.JSONDecodeError:
                 continue
             except Exception as e:
-                print(f"跳过第 {idx} 行，错误: {e}")
+                print(f"Skip line, error:: {e}")
                 continue
 
-    print(f'成功处理 {len(data_list)} 条数据')
+    print(f'Successfully processed {len(data_list)} ')
 
     if data_list:
-        print("\n示例数据（第 1 条）：")
+        print("\nExample data (first 1 item):")
         print("=" * 80)
-        print(f"Prompt (前300字符): {data_list[0]['prompt'][:300]}...")
-        print(f"Completion (前200字符): {data_list[0]['completion'][:200]}...")
+        print(f"Prompt (300): {data_list[0]['prompt'][:300]}...")
+        print(f"Completion (200): {data_list[0]['completion'][:200]}...")
         print("=" * 80)
 
     return Dataset.from_list(data_list)

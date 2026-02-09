@@ -513,9 +513,9 @@ class Qwen3ForCausalLM(Qwen3PreTrainedModel, GenerationMixin):
         )
 
 class QwenBoostForCausalLM(PreTrainedModel, GenerationMixin):
-    config_class = Qwen3Config  # 或你自定义的 Qwen3EnsembleConfig
+    config_class = Qwen3Config  # Or your custom Qwen3EnsembleConfig
     
-    # 声明支持 Flash Attention 2、SDPA 等注意力实现
+    # Declare support for Flash Attention 2, SDPA, and other attention implementations
     _supports_flash_attn_2 = True
     _supports_sdpa = True
     _supports_flex_attn = True
@@ -526,18 +526,18 @@ class QwenBoostForCausalLM(PreTrainedModel, GenerationMixin):
 
         self.num_sub_models = config.num_sub_models
 
-        # 子模型
+        # Sub-models
         self.sub_models = nn.ModuleList(
             [Qwen3ForCausalLM(config) for _ in range(self.num_sub_models)]
         )
 
-        # 如果需要也可以启用
+        # Can also be enabled if needed
         # self.post_init()
-        # ========= 关键新增：支持 gradient checkpointing =========
+        # ===== Key addition: support gradient checkpointing =====
     def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
         """
-        直接把 enable 操作转发给每一个子模型。
-        Trainer 调用的是这个方法，而不会再走基类的实现。
+        Forward the enable operation to each sub-model.
+        The Trainer calls this method, and will not use the base class implementation.
         """
         for m in self.sub_models:
             if hasattr(m, "gradient_checkpointing_enable"):
@@ -547,7 +547,7 @@ class QwenBoostForCausalLM(PreTrainedModel, GenerationMixin):
     
     def gradient_checkpointing_disable(self):
         """
-        同理，关闭时也转发到每个子模型。
+        Similarly, when disabling, forward to each sub-model.
         """
         for m in self.sub_models:
             if hasattr(m, "gradient_checkpointing_disable"):
@@ -569,23 +569,23 @@ class QwenBoostForCausalLM(PreTrainedModel, GenerationMixin):
     ):
         outputs_list = []
 
-        # ---- 处理每个子模型的 KV cache ----
+        # ---- Handle KV cache for each sub-model ----
         if isinstance(past_key_values, list):
-            # 期望长度 == num_sub_models
+            # Expect length == num_sub_models
             past_key_values_list = past_key_values
         else:
-            # 初始调用 / 没传 list 的情况，给每个子模型一个 None
+            # Initial call / no list passed, give None to each sub-model
             past_key_values_list = [past_key_values] * self.num_sub_models
 
-        # ---- 前向 & 收集输出 ----
+        # ---- Forward & collect outputs ----
         for idx, (model, pkv) in enumerate(zip(self.sub_models, past_key_values_list)):
             out = model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 position_ids=position_ids,
                 past_key_values=pkv,
-                # inputs_embeds=inputs_embeds,  # 如果你需要可以打开
-                # 不要把 labels 传给子模型，否则会重复算 loss
+                #                 inputs_embeds=inputs_embeds,  # Enable if needed
+                # Don't pass labels to sub-models, otherwise loss will be computed twice
                 labels=None,
                 use_cache=use_cache,
                 cache_position=cache_position,
@@ -594,23 +594,23 @@ class QwenBoostForCausalLM(PreTrainedModel, GenerationMixin):
             )
             outputs_list.append(out)
 
-        # ---- 加权融合 logits ----
+        # ---- Weighted fusion of logits ----
         # logits shape: (num_sub_models, batch, seq, vocab)
         stacked_logits = torch.stack([o.logits for o in outputs_list], dim=0)
-        # 从 config 读取 fusion_lambda，如果不存在则默认 0.5（平均融合）
+        # Read fusion_lambda from config, default to 0.5 (average fusion) if not exists
         fusion_lambda = getattr(self.config, "fusion_lambda", 0.5)
-        # 前面的模型（index 0）占 (1-lambda)，后面的模型（index 1）占 lambda
+        # The previous model (index 0) accounts for (1-lambda), the later model (index 1) accounts for lambda
         if len(outputs_list) == 2:
             logits = (1 - fusion_lambda) * stacked_logits[0] + fusion_lambda * stacked_logits[1]
             # print("logits shape:::", logits.shape)
         else:
-            # 如果有多个模型，则平均融合（兼容性处理）
+            # ，（）
             logits = stacked_logits.mean(dim=0)
 
-        # ---- 计算 ensemble 的 loss（像 Qwen3ForCausalLM 那样）----
+        # ----  ensemble  loss（ Qwen3ForCausalLM ）----
         loss = None
         if labels is not None:
-            # 这里直接复用子模型的 loss_function
+            #  loss_function
             loss = self.sub_models[0].loss_function(
                 logits=logits,
                 labels=labels,
@@ -618,7 +618,7 @@ class QwenBoostForCausalLM(PreTrainedModel, GenerationMixin):
                 **kwargs,
             )
 
-        # ---- 组装返回值，确保 Trainer 可以拿到 loss ----
+        # ---- ， Trainer  loss ----
         base_output = outputs_list[0]
         return CausalLMOutputWithPast(
             loss=loss,

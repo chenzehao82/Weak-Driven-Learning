@@ -1,12 +1,12 @@
 """
-多卡并行计算 entropy 的工具模块
-支持自动检测模型类型（Qwen / QwenBoost）
+Compute entropy 
+Support automatic model type detection (Qwen / QwenBoost)
 """
 
 import json
 import os
-# os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
-# os.environ["HF_HOME"] = "/root/buaa/hf_cache"
+## os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+## os.environ["HF_HOME"] = "/root/buaa/hf_cache"
 import torch
 import gc
 import time
@@ -20,12 +20,12 @@ from accelerate import PartialState
 
 def detect_model_type(model_path: str) -> str:
     """
-    检测模型类型
+    Detect model type
     
     Returns:
-        "qwen_boost" 或 "standard"
+        "qwen_boost"  "standard"
     """
-    # 检查是否存在 QwenBoost 特有的配置文件
+    ##  QwenBoost 
     config_file = os.path.join(model_path, "config.json")
     
     if os.path.exists(config_file):
@@ -33,66 +33,66 @@ def detect_model_type(model_path: str) -> str:
             with open(config_file, "r") as f:
                 config = json.load(f)
             
-            # 检查是否有 ensemble 相关的配置
+            ##  ensemble 
             if "ensemble_config" in config or "num_submodels" in config:
                 return "qwen_boost"
             
-            # 检查 architectures 字段
+            ##  architectures 
             if "architectures" in config:
                 for arch in config["architectures"]:
                     if "Boost" in arch or "Ensemble" in arch:
                         return "qwen_boost"
         except Exception as e:
-            print(f"警告: 读取 config.json 失败: {e}")
+            print(f"Warning: Read config.json failed: {e}")
     
-    # 检查是否存在 QwenBoost 特有的文件
+    ##  QwenBoost 
     boost_indicator_files = ["ensemble_weights.json", "submodel_weights.json"]
     for indicator in boost_indicator_files:
         if os.path.exists(os.path.join(model_path, indicator)):
             return "qwen_boost"
     
-    # 默认为标准模型
+    ## Default to standard model
     return "standard"
 
 
 def load_model_and_tokenizer(model_path: str, device: torch.device, rank: int, stage: str = None):
     """
-    加载模型和 tokenizer，根据 stage 参数决定使用哪种模型类型
+    Load model and tokenizer, determine which model type to use based on stage parameter
     
     Args:
-        model_path: 模型路径
-        device: 设备
-        rank: 进程rank
-        stage: 训练阶段，如果为 "stage3" 则使用 QwenBoostForCausalLM（融合模型），否则使用 AutoModelForCausalLM
+        model_path: Model path
+        device: 
+        rank: rank
+        stage: Training stage, if "stage3" then use QwenBoostForCausalLM (fused model), otherwise use AutoModelForCausalLM
     
     Returns:
         model, tokenizer, model_type
     """
-    # 根据 stage 参数决定模型类型
-    # 只有 stage3（融合后的模型）才使用 QwenBoostForCausalLM
+    ## Determine model type based on stage parameter
+    ## Only stage3 (fused model) uses QwenBoostForCausalLM
     import transformers
     print(f"Process Rank: {rank}, Transformers Version: {transformers.__version__}")
     if stage == "stage3":
         model_type = "qwen_boost"
-        print(f"[Rank {rank}] 根据 stage={stage} 使用 QwenBoostForCausalLM")
+        print(f"[Rank {rank}] Based on stage={stage} Using QwenBoostForCausalLM")
     else:
         model_type = "standard"
-        print(f"[Rank {rank}] 根据 stage={stage} 使用 AutoModelForCausalLM")
+        print(f"[Rank {rank}] Based on stage={stage} Using AutoModelForCausalLM")
     
-    # 加载 tokenizer
-    print(f"[Rank {rank}] 加载 tokenizer...")
+    ## Loading tokenizer
+    print(f"[Rank {rank}] Loading tokenizer...")
     tokenizer = AutoTokenizer.from_pretrained(
         model_path,
         trust_remote_code=True,
         local_files_only=True
     )
     
-    # 设置 pad_token
+    ##  pad_token
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     
-    # 加载模型 - 强制 CPU 加载，避开 DeepSpeed 分片
-    print(f"[Rank {rank}] 加载模型 (CPU)...")
+    ## Loading model - force CPU load, avoid DeepSpeed sharding
+    print(f"[Rank {rank}] Loading model (CPU)...")
     if model_type == "qwen_boost":
         from EnsembleQwen3.modeling_qwen3 import QwenBoostForCausalLM
         model = QwenBoostForCausalLM.from_pretrained(
@@ -109,19 +109,19 @@ def load_model_and_tokenizer(model_path: str, device: torch.device, rank: int, s
             trust_remote_code=True,
         )
     
-    # 修复 padding_idx 问题
+    ##  padding_idx 
     if hasattr(model, "get_input_embeddings"):
         embeddings = model.get_input_embeddings()
         if hasattr(embeddings, "padding_idx") and embeddings.padding_idx is not None:
             num_embeddings = embeddings.weight.size(0)
             if embeddings.padding_idx >= num_embeddings:
-                print(f"[Rank {rank}] 修复: padding_idx ({embeddings.padding_idx}) >= num_embeddings ({num_embeddings})，重置为 None")
+                print(f"[Rank {rank}] Fix: padding_idx ({embeddings.padding_idx}) >= num_embeddings ({num_embeddings})，reset to None")
                 embeddings.padding_idx = None
                 if hasattr(model.config, "pad_token_id"):
                     model.config.pad_token_id = None
     
-    # 移动到 GPU
-    print(f"[Rank {rank}] 将模型移动到 GPU {device}...")
+    ##  GPU
+    print(f"[Rank {rank}] Move model to GPU {device}...")
     model = model.to(device)
     
     return model, tokenizer, model_type
@@ -136,22 +136,22 @@ def compute_entropy_for_model(
     stage: str = None,
 ) -> str:
     """
-    多卡并行计算模型在数据集上的 entropy，并保存到 jsonl 文件
-    根据 stage 参数决定使用 QwenBoostForCausalLM 或 AutoModelForCausalLM
+    Multi-GPU parallel compute model entropy on dataset and save to jsonl file
+     stage Using QwenBoostForCausalLM  AutoModelForCausalLM
     
     Args:
-        model_path: 模型路径
-        data_files: 数据文件路径列表
-        output_path: 输出文件路径（最终合并后的文件）
-        entropy_field: entropy 字段名，如 entropy_0, entropy_1, entropy_2
-        distributed_state: PartialState 对象，用于分布式处理
-        stage: 训练阶段，如果为 "stage3" 则使用 QwenBoostForCausalLM，否则使用 AutoModelForCausalLM
+        model_path: Model path
+        data_files: Data file path list
+        output_path: Output file path (final merged file)
+        entropy_field: entropy field name, e.g., entropy_0, entropy_1, entropy_2
+        distributed_state: PartialState object for distributed processing
+        stage: Training stage， "stage3" Using QwenBoostForCausalLM，Using AutoModelForCausalLM
     
     Returns:
-        保存的 entropy 文件路径
+        Saved entropy file path
     """
     
-    # 创建 PartialState（如果没有提供）
+    ##  PartialState（）
     if distributed_state is None:
         distributed_state = PartialState()
     
@@ -161,18 +161,18 @@ def compute_entropy_for_model(
     
     if is_main:
         print(f"\n{'='*60}")
-        print(f"开始多卡并行计算 {entropy_field}")
-        print(f"模型: {model_path}")
-        print(f"使用 {world_size} 张卡并行计算")
+        print(f"Starting multi-GPU parallel compute {entropy_field}")
+        print(f"Model: {model_path}")
+        print(f"Using .* GPU cards parallel compute")
         print(f"{'='*60}\n")
     
-    # 每个进程使用自己的 GPU
+    ## Each process uses its own GPU
     device = torch.device(f"cuda:{distributed_state.local_process_index}")
     
-    # 加载模型和 tokenizer（根据 stage 参数决定类型）
+    ## Load model and tokenizer (determine type based on stage parameter)
     model, tokenizer, model_type = load_model_and_tokenizer(model_path, device, rank, stage=stage)
     
-    # 加载数据集
+    ## Load dataset
     all_records = []
     if isinstance(data_files, str):
         data_files = [data_files]
@@ -186,13 +186,13 @@ def compute_entropy_for_model(
     dataset = Dataset.from_list(all_records)
     
     if is_main:
-        print(f"总数据集大小: {len(dataset)}")
+        print(f"Total dataset size: {len(dataset)}")
     
-    # 数据分片：每个进程处理一部分数据
+    ## Data sharding: each process processes a part of data
     dataset_shard = dataset.shard(num_shards=world_size, index=rank)
-    print(f"[Rank {rank}] 处理数据分片大小: {len(dataset_shard)}")
+    print(f"[Rank {rank}] Processing data shard size: {len(dataset_shard)}")
     
-    # collate_fn
+    ## collate_fn
     def collate_fn(batch):
         full_texts = []
         prompt_texts = []
@@ -249,7 +249,7 @@ def compute_entropy_for_model(
         labels = enc["input_ids"].clone()
         prompt_lens = []
         
-        # 使用安全的 pad_token_id 检查
+        ##  pad_token_id 
         pad_id = tokenizer.pad_token_id
         if pad_id is None:
             pad_id = tokenizer.eos_token_id
@@ -265,7 +265,7 @@ def compute_entropy_for_model(
         
         return enc
     
-    # DataLoader
+    ## DataLoader
     dataloader = DataLoader(
         dataset_shard,
         batch_size=1,
@@ -276,12 +276,12 @@ def compute_entropy_for_model(
     results = []
     model.eval()
     
-    # 计算熵
+    ## 
     desc = f"[Rank {rank}] Computing {entropy_field}"
     for batch in tqdm.tqdm(dataloader, desc=desc, disable=not is_main):
         B = batch["input_ids"].shape[0]
         
-        # 移动数据到设备
+        ## 
         batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v 
                  for k, v in batch.items()}
         
@@ -296,7 +296,7 @@ def compute_entropy_for_model(
                     use_cache=True
                 )
             except Exception as e:
-                print(f"[Rank {rank}] 错误: 模型前向传播失败 - {e}")
+                print(f"[Rank {rank}] Error: Modelfailed - {e}")
                 print(f"[Rank {rank}] input_ids shape: {batch['input_ids'].shape}")
                 print(f"[Rank {rank}] input_ids max: {batch['input_ids'].max()}, min: {batch['input_ids'].min()}")
                 raise
@@ -304,7 +304,7 @@ def compute_entropy_for_model(
         logits = outputs.logits
         orig_idx = batch["orig_idx"].tolist()
         
-        # 计算熵
+        ## 
         for i in range(B):
             true_idx = orig_idx[i]
             answer_mask = batch["labels"][i] != -100
@@ -323,7 +323,7 @@ def compute_entropy_for_model(
                 entropy_field: entropy_value
             })
     
-    # 每个进程保存自己的结果到临时文件
+    ## Each process saves its own results to temp file
     temp_output_dir = os.path.dirname(output_path)
     temp_output_name = os.path.basename(output_path).replace(".jsonl", f"_rank{rank}.jsonl")
     temp_output_path = os.path.join(temp_output_dir, temp_output_name)
@@ -333,18 +333,18 @@ def compute_entropy_for_model(
         for it in results:
             f.write(json.dumps(it, ensure_ascii=False) + "\n")
     
-    print(f"[Rank {rank}] 计算完成，保存到临时文件: {temp_output_path}")
-    print(f"[Rank {rank}] 开始清理 GPU 内存...")
+    print(f"[Rank {rank}] Compute complete, saved to temp file: {temp_output_path}")
+    print(f"[Rank {rank}] Starting GPU memory cleanup...")
     
-    # 彻底清理内存
+    ## 
     try:
         if hasattr(model, 'hf_device_map'):
             for param in model.parameters():
                 param.grad = None
     except Exception as e:
-        print(f"[Rank {rank}] 清理模型参数时出现警告（可忽略）: {e}")
+        print(f"[Rank {rank}] Warning when cleaning model parameters (can ignore): {e}")
     
-    # 删除所有对象
+    ## Delete all objects
     del results
     del dataloader
     del dataset_shard
@@ -353,11 +353,11 @@ def compute_entropy_for_model(
     del tokenizer
     del model
     
-    # 强制垃圾回收
+    ## Force garbage collection
     gc.collect()
     gc.collect()
     
-    # 清空 CUDA 缓存
+    ## Empty CUDA cache
     if torch.cuda.is_available():
         torch.cuda.synchronize(device)
         torch.cuda.empty_cache()
@@ -368,18 +368,18 @@ def compute_entropy_for_model(
         
         mem_allocated = torch.cuda.memory_allocated(device) / 1024**3
         mem_reserved = torch.cuda.memory_reserved(device) / 1024**3
-        print(f"[Rank {rank}] 清理后 GPU {distributed_state.local_process_index}: "
-              f"已分配 {mem_allocated:.2f}GB, 已保留 {mem_reserved:.2f}GB")
+        print(f"[Rank {rank}] Cleaned GPU {distributed_state.local_process_index}: "
+              f"Allocated {mem_allocated:.2f}GB, Reserved {mem_reserved:.2f}GB")
     
-    print(f"[Rank {rank}] GPU 内存清理完成")
+    print(f"[Rank {rank}] GPU memory cleanup complete")
     
-    # 等待所有进程完成
+    ## Wait for all processes to complete
     distributed_state.wait_for_everyone()
     
-    # 主进程合并所有结果
+    ## 
     if is_main:
         print(f"\n{'='*60}")
-        print(f"开始合并所有进程的结果...")
+        print(f"Starting to merge results from all processes...")
         print(f"{'='*60}")
         
         merged_results = {}
@@ -391,7 +391,7 @@ def compute_entropy_for_model(
             )
             
             if os.path.exists(temp_file):
-                print(f"读取 rank {i} 的结果: {temp_file}")
+                print(f"Read results from rank: {temp_file}")
                 with open(temp_file, "r", encoding="utf-8") as f:
                     for line in f:
                         if line.strip():
@@ -399,20 +399,20 @@ def compute_entropy_for_model(
                             idx = item["idx"]
                             merged_results[idx] = item
                 
-                # 删除临时文件
+                ## Delete temp file
                 os.remove(temp_file)
-                print(f"删除临时文件: {temp_file}")
+                print(f"Delete temp file: {temp_file}")
         
-        # 保存合并后的结果
-        print(f"\n保存合并结果到: {output_path}")
+        ## 
+        print(f"\nSave merged results to: {output_path}")
         with open(output_path, "w", encoding="utf-8") as f:
             for idx in sorted(merged_results.keys()):
                 f.write(json.dumps(merged_results[idx], ensure_ascii=False) + "\n")
         
-        print(f"✓ {entropy_field} 计算完成！共 {len(merged_results)} 条记录")
+        print(f"✓ {entropy_field} Compute complete! Total")
         print(f"{'='*60}\n")
     
-    # 再次同步
+    ## Sync again
     distributed_state.wait_for_everyone()
     
     return output_path
@@ -420,25 +420,25 @@ def compute_entropy_for_model(
 
 def merge_entropy_files(entropy_files: list, output_path: str) -> str:
     """
-    合并多个 entropy 文件到一个文件中
+    Merge multiple entropy files into one file
     
     Args:
-        entropy_files: entropy 文件路径列表
-        output_path: 输出文件路径
+        entropy_files: entropy file path list
+        output_path: Output file path
     
     Returns:
-        合并后的文件路径
+        Merged file path
     """
-    print(f"\n合并 entropy 文件到: {output_path}")
+    print(f"\nMerge entropy files to: {output_path}")
     
-    # 读取所有 entropy 文件
+    ##  entropy 
     idx_to_entropy = {}
     for filepath in entropy_files:
         if not os.path.exists(filepath):
-            print(f"  警告: 文件不存在，跳过: {filepath}")
+            print(f"  : ，: {filepath}")
             continue
         
-        print(f"  读取: {filepath}")
+        print(f"  Read: {filepath}")
         with open(filepath, "r", encoding="utf-8") as f:
             for line in f:
                 if line.strip():
@@ -448,12 +448,12 @@ def merge_entropy_files(entropy_files: list, output_path: str) -> str:
                         idx_to_entropy[idx] = {"idx": idx}
                     idx_to_entropy[idx].update(item)
     
-    # 保存合并结果
+    ## 
     os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else ".", exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         for idx in sorted(idx_to_entropy.keys()):
             f.write(json.dumps(idx_to_entropy[idx], ensure_ascii=False) + "\n")
     
-    print(f"✓ 合并完成，共 {len(idx_to_entropy)} 条记录\n")
+    print(f"✓ Merge complete, Total\n")
     return output_path
 

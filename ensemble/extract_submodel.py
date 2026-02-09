@@ -1,11 +1,11 @@
-#!/usr/bin/env python3
+##!/usr/bin/env python3
 """
-从融合模型中提取指定的子模型并保存为独立模型。
+Extract specified sub-model from ensemble model and save as independent model.
 
-用法:
+Usage:
     python extract_submodel.py --input <ensemble_model_path> --output <save_dir> [--submodel_idx 1] [--dtype bfloat16]
 
-示例:
+Example:
     python extract_submodel.py \
         --input weights/llmboost/Qwen3-4B-Base/stage3_fused_brownboost/checkpoint-436 \
         --output weights/llmboost/Qwen3-4B-Base/stage3_m3 \
@@ -16,52 +16,52 @@ import os
 import sys
 import argparse
 
-# 延迟导入，先解析参数（这样 --help 可以在没有依赖的情况下工作）
+## Delay imports, parse parameters first (so --help works without dependencies)
 def import_dependencies():
-    """延迟导入依赖"""
+    """Delay import dependencies"""
     import torch
     
-    # 添加项目根目录到 sys.path（父目录）
+    ## Add project root to sys.path (parent directory)
     _current_dir = os.path.dirname(os.path.abspath(__file__))
-    _parent_dir = os.path.dirname(_current_dir)  # 项目根目录
+    _parent_dir = os.path.dirname(_current_dir)  ## 
     if _parent_dir not in sys.path:
         sys.path.insert(0, _parent_dir)
     
-    # 导入 extract_submodel 函数
+    ## Import extract_submodel function
     try:
         from utils.fuse_models import extract_submodel
         return extract_submodel, torch
     except ImportError as e:
-        print(f"❌ 导入错误: {e}")
-        print("请确保:")
-        print("  1. 已激活正确的 conda 环境（例如: conda activate qwen）")
-        print("  2. utils/ 目录存在于项目根目录")
-        print(f"  3. 当前工作目录: {os.getcwd()}")
-        print(f"  4. 脚本位置: {_current_dir}")
-        print(f"  5. 项目根目录: {_parent_dir}")
-        print(f"  6. Python 路径: {sys.path[:3]}")
+        print(f"❌ Import error: {e}")
+        print("Please ensure:")
+        print("  1. Correct conda environment is activated (e.g.: conda activate qwen)")
+        print("  2. utils/ Directory exists in project root")
+        print(f"  3. Current working directory: {os.getcwd()}")
+        print(f"  4. Script location: {_current_dir}")
+        print(f"  5. Project root: {_parent_dir}")
+        print(f"  6. Python path: {sys.path[:3]}")
         sys.exit(1)
 
 
 def parse_args():
-    """解析命令行参数"""
+    """Parse command line arguments"""
     parser = argparse.ArgumentParser(
-        description="从融合模型中提取指定的子模型并保存为独立模型",
+        description="Extract specified sub-model from ensemble model and save as independent model",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-示例:
-  # 提取 sub_models.1 (第二个模型)
+Example:
+  ## Extract sub_models.1 (second model)
   python extract_submodel.py \\
       --input weights/llmboost/Qwen3-4B-Base/stage3_fused_brownboost/checkpoint-436 \\
       --output weights/llmboost/Qwen3-4B-Base/stage3_m3
 
-  # 提取 sub_models.0 (第一个模型)
+  ## Extract sub_models.0 (first model)
   python extract_submodel.py \\
       --input weights/llmboost/Qwen3-4B-Base/stage3_fused_brownboost/checkpoint-436 \\
       --output weights/llmboost/Qwen3-4B-Base/stage3_m0 \\
       --submodel_idx 0
 
-  # 指定数据类型
+  ## Specify data type
   python extract_submodel.py \\
       --input weights/llmboost/Qwen3-4B-Base/stage3_fused_brownboost/checkpoint-436 \\
       --output weights/llmboost/Qwen3-4B-Base/stage3_m3 \\
@@ -73,21 +73,21 @@ def parse_args():
         "--input",
         type=str,
         default="/root/buaa/czh/EnsembleLLM/weights/llmboost-code/Qwen3-8B-Base/stage3_fused_brownboost_freezefalse_vote-base/checkpoint-406",
-        help="融合模型路径（可以是 checkpoint 目录或模型目录）"
+        help="Ensemble model path (can be checkpoint directory or model directory)"
     )
     
     parser.add_argument(
         "--output",
         type=str,
         default="/root/buaa/czh/EnsembleLLM/weights/llmboost-code/Qwen3-8B-Base/stage3",
-        help="保存提取的子模型的目录路径"
+        help="Save directory for extracted sub-model"
     )
     
     parser.add_argument(
         "--submodel_idx",
         type=int,
         default=1,
-        help="要提取的子模型索引（0表示第一个，1表示第二个，默认: 1）"
+        help="Sub-model index to extract (0 for first, 1 for second, default: 1）"
     )
     
     parser.add_argument(
@@ -95,14 +95,14 @@ def parse_args():
         type=str,
         default="bfloat16",
         choices=["bfloat16", "float16", "float32"],
-        help="保存的权重精度（默认: bfloat16）"
+        help="Saved weight precision (default: bfloat16）"
     )
     
     return parser.parse_args()
 
 
 def get_torch_dtype(dtype_str: str, torch):
-    """将字符串转换为 torch dtype"""
+    """Convert string to torch dtype"""
     dtype_map = {
         "bfloat16": torch.bfloat16,
         "float16": torch.float16,
@@ -112,44 +112,44 @@ def get_torch_dtype(dtype_str: str, torch):
 
 
 def main():
-    """主函数"""
+    """Main function"""
     args = parse_args()
     
-    # 延迟导入依赖（在解析参数之后）
+    ## Delay import dependencies（）
     extract_submodel, torch = import_dependencies()
     
-    # 验证输入路径
+    ## Validate input path
     if not os.path.exists(args.input):
-        print(f"❌ 错误: 输入路径不存在: {args.input}")
+        print(f"❌ Error: Input path does not exist: {args.input}")
         sys.exit(1)
     
-    # 检查是否是 checkpoint 目录
+    ## Check if it's a checkpoint directory
     if os.path.isdir(args.input):
-        # 检查是否有 config.json 或 pytorch_model.bin
+        ## Check whether there is config.json or pytorch_model.bin
         has_config = os.path.exists(os.path.join(args.input, "config.json"))
         has_model = os.path.exists(os.path.join(args.input, "pytorch_model.bin")) or \
                    any(f.startswith("pytorch_model") for f in os.listdir(args.input) if os.path.isfile(os.path.join(args.input, f)))
         
         if not (has_config or has_model):
-            print(f"⚠️  警告: 输入目录似乎不是有效的模型目录")
-            print(f"   未找到 config.json 或 pytorch_model.bin")
-            print(f"   继续尝试加载...")
+            print(f"⚠️  Warning: Input directory does not seem to be a valid model directory")
+            print(f"   Did not find config.json or pytorch_model.bin")
+            print(f"   Continue attempting to load...")
     
-    # 转换 dtype
+    ## Convert dtype
     torch_dtype = get_torch_dtype(args.dtype, torch)
     
-    # 打印参数信息
+    ## Print parameter information
     print("=" * 60)
-    print("🔹 提取子模型配置")
+    print("Extract sub-model configuration")
     print("=" * 60)
-    print(f"  输入模型: {args.input}")
-    print(f"  输出目录: {args.output}")
-    print(f"  子模型索引: {args.submodel_idx} (sub_models.{args.submodel_idx})")
-    print(f"  权重精度: {args.dtype}")
+    print(f"  Input model: {args.input}")
+    print(f"  Output directory: {args.output}")
+    print(f"  Sub-model index: {args.submodel_idx} (sub_models.{args.submodel_idx})")
+    print(f"  Weight precision: {args.dtype}")
     print("=" * 60)
     print()
     
-    # 调用 extract_submodel 函数
+    ## Call extract_submodel function
     try:
         saved_path = extract_submodel(
             ensemble_model_path=args.input,
@@ -160,16 +160,16 @@ def main():
         
         print()
         print("=" * 60)
-        print("✅ 提取完成!")
+        print("✅ Extraction complete!")
         print("=" * 60)
-        print(f"  保存路径: {saved_path}")
-        print(f"  输出目录: {args.output}")
+        print(f"  Save path: {saved_path}")
+        print(f"  Output directory: {args.output}")
         print("=" * 60)
         
     except Exception as e:
         print()
         print("=" * 60)
-        print(f"❌ 提取失败: {e}")
+        print(f"❌ Extraction failed: {e}")
         print("=" * 60)
         import traceback
         traceback.print_exc()
