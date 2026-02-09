@@ -248,15 +248,6 @@ Example results visualization:
   <img src="pics/results.png" alt="Evaluation Results" width="600"/>
 </p>
 
-## Theoretical Insights
-
-Our gradient-level analysis demonstrates that:
-
-1. **Gradient Reshaping**: Incorporating weak-model logits reshapes the optimization landscape, preventing gradient vanishing on non-target tokens.
-
-2. **Sustained Learning Pressure**: The joint training mechanism maintains effective learning pressure beyond standard supervision saturation.
-
-3. **No Inference Overhead**: The extracted enhanced sub-model has the same architecture as the base model, requiring no additional computational cost during inference.
 
 ## Acknowledgments
 
