@@ -3,7 +3,7 @@
 ## Update Log
 - **2026-02-01**：Update Code 
 
-**Weak Agents can Make Strong Agents Stronger (WAMSAS)**
+**Weak Agents can Make Strong Agents Stronger (WASS)**
 
 Weak-Driven Learning is a novel post-training paradigm that challenges the conventional assumption that learning with weaker models necessarily degrades performance. Instead, we show that weak agents (such as historical model checkpoints) can provide informative error signals that continue to drive improvement even when standard supervision saturates.
 
