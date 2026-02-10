@@ -189,8 +189,8 @@ Weak-Driven-Learning/
 ├── docs/                 # Additional documentation
 ├── pics/                 # Figures and diagrams
 │   ├── weak-drivenlearning.png  # Paradigm comparison diagram
-│   ├── 绘图.png                 # Method overview (three phases + logit mixing)
-│   └── 结果图.png              # Evaluation results
+│   ├── framework.png                 # Method overview (three phases + logit mixing)
+│   └── result.png              # Evaluation results
 ├── weights/              # Model checkpoints (generated, gitignored)
 ├── logs/                 # Training logs (generated, gitignored)
 ├── tensorboard_logs/     # TensorBoard logs (generated, gitignored)
