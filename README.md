@@ -1,9 +1,16 @@
-# Weak-Driven Learning
+<h1 align="center">Weak-Driven Learning</h1>
+
+<p align="center"><img src="pics/logo.png" width="600px" alt="Weak-Driven Learning" /></p>
+
+<p align="center">
+  <a href="https://arxiv.org/abs/2602.08222"><img src="https://img.shields.io/badge/📄_Paper-EA4335?style=for-the-badge&logoColor=white" alt="Paper"></a>
+  <a href="https://huggingface.co/papers/2602.08222"><img src="https://img.shields.io/badge/🤗_Hugging_Face-FFB000?style=for-the-badge&logoColor=white" alt="Hugging Face"></a>
+</p>
 
 ## Update Log
 - **2026-02-01**：Update Code 
 
-**Weak Agents can Make Strong Agents Stronger (WASS)**
+**Weak Agents can Make Strong Agents Stronger (WMSS)**
 
 Weak-Driven Learning is a novel post-training paradigm that challenges the conventional assumption that learning with weaker models necessarily degrades performance. Instead, we show that weak agents (such as historical model checkpoints) can provide informative error signals that continue to drive improvement even when standard supervision saturates.
 
