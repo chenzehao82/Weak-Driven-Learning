@@ -5,6 +5,7 @@
 <p align="center">
   <a href="https://arxiv.org/abs/2602.08222"><img src="https://img.shields.io/badge/📄_Paper-EA4335?style=for-the-badge&logoColor=white" alt="Paper"></a>
   <a href="https://huggingface.co/papers/2602.08222"><img src="https://img.shields.io/badge/🤗_Hugging_Face-FFB000?style=for-the-badge&logoColor=white" alt="Hugging Face"></a>
+  <a href="https://huggingface.co/chhao/Weak-Driven-Learning"><img src="https://img.shields.io/badge/🤗_Model-4285F4?style=for-the-badge&logoColor=white" alt="Model Weights"></a>
 </p>
 
 ## Update Log
@@ -180,31 +181,29 @@ Weak-Driven-Learning/
 │   ├── extract_submodel.py    # Extract enhanced sub-model from ensemble
 │   ├── copymodel.py           # Model copying utility
 │   └── eval_vllm_thinking_math.py  # Evaluation script
+├── dataprocess/          # Data processing scripts
+│   └── am_deepseek_r1_distilled.py  # AM-DeepSeek-R1 dataset filtering and formatting
 ├── utils/                # Model loading, fusion, entropy computation, data processing
 │   ├── utils.py          # Model and data loading utilities
 │   ├── fuse_models.py    # Logit mixing and model fusion (WMSS)
 │   ├── compute_entropy.py     # Entropy computation algorithms
 │   ├── weight_datasets.py     # Entropy-based weighted sampling (BrownBoost-style)
-│   └── load_dataset.py    # Dataset loading utilities
+│   ├── load_dataset.py   # Dataset loading utilities
+│   ├── prompts.py        # Prompt templates
+│   ├── run_entropy.py    # Entropy computation runner
+│   └── clear_gpu.py      # GPU memory management utility
 ├── Trainer/              # SFT training runners and trainers
-│   ├── sft_runner.py     # Distributed training runner
-│   ├── sft_trainer.py    # Base SFT trainer
-│   └── ensemble_sft_trainer.py  # Joint training trainer with logit mixing
+│   └── sft_runner.py     # Distributed training runner
 ├── EnsembleQwen3/        # Qwen3 ensemble model definitions
-│   ├── configuration_qwen3.py
-│   └── modeling_qwen3.py
-├── docs/                 # Additional documentation
+│   ├── configuration_qwen3.py  # Model configuration
+│   └── modeling_qwen3.py       # Model architecture with logit mixing
 ├── pics/                 # Figures and diagrams
+│   ├── logo.png          # Project logo
 │   ├── weak-drivenlearning.png  # Paradigm comparison diagram
-│   ├── framework.png                 # Method overview (three phases + logit mixing)
-│   └── result.png              # Evaluation results
-├── weights/              # Model checkpoints (generated, gitignored)
-├── logs/                 # Training logs (generated, gitignored)
-├── tensorboard_logs/     # TensorBoard logs (generated, gitignored)
-├── LICENSE
-├── README.md
-├── QUICKSTART.md
-└── SETUP.md
+│   ├── framework.png     # Method overview (three phases + logit mixing)
+│   └── results.png       # Evaluation results
+├── requirements.txt      # Python dependencies
+└── README.md             # Project documentation
 ```
 
 ## Modular System Design
