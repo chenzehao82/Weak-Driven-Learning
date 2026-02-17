@@ -6,6 +6,8 @@
   <a href="https://arxiv.org/abs/2602.08222"><img src="https://img.shields.io/badge/📄_Paper-EA4335?style=for-the-badge&logoColor=white" alt="Paper"></a>
   <a href="https://huggingface.co/papers/2602.08222"><img src="https://img.shields.io/badge/🤗_Hugging_Face-FFB000?style=for-the-badge&logoColor=white" alt="Hugging Face"></a>
   <a href="https://huggingface.co/chhao/Weak-Driven-Learning"><img src="https://img.shields.io/badge/🤗_Model-4285F4?style=for-the-badge&logoColor=white" alt="Model Weights"></a>
+  <a href="https://zhuanlan.zhihu.com/p/2005771197502231775"><img src="https://img.shields.io/badge/知乎-0084FF?style=for-the-badge&logo=zhihu&logoColor=white" alt="Zhihu"></a>
+  <a href="http://xhslink.com/o/4RYFUzqCHSj"><img src="https://img.shields.io/badge/小红书-FF2442?style=for-the-badge&logo=xiaohongshu&logoColor=white" alt="Xiaohongshu"></a>
 </p>
 
 ## Update Log
