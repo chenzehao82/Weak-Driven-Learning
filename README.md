@@ -1,3 +1,5 @@
+
+
 <h1 align="center">Weak-Driven Learning</h1>
 
 <p align="center"><img src="pics/logo.png" width="600px" alt="Weak-Driven Learning" /></p>
@@ -90,7 +92,7 @@ pip install -r requirements.txt
 We provide a data processing script to filter and reformat the AM-DeepSeek-R1-Distilled dataset:
 
 ```bash
-cd "/root/buaa/czh/Weak-Driving Learning/dataprocess"
+cd dataprocess
 python am_deepseek_r1_distilled.py
 ```
 
@@ -265,4 +267,3 @@ Example results visualization:
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
