@@ -63,7 +63,7 @@ The right panel of the following figure visualizes the joint-training principle 
 
 ### Prerequisites
 
-- Python >= 3.8
+- Python >= 3.10
 - CUDA-capable GPUs (recommended: 8 GPUs for full pipeline)
 - Conda environment (recommended)
 
@@ -100,11 +100,14 @@ This will generate:
 - `am_deepseek_r1_filtered_ad.jsonl` — main training data (with `idx` field)
 - `am_deepseek_r1_filtered_ad_test_1000.jsonl` — a 1K-sample test subset
 
-By default, `scripts/run_ensemble.sh` uses:
-- `stage1_data_path="/root/buaa/czh/Weak-Driving Learning/dataprocess/am_deepseek_r1_filtered_ad.jsonl"`
-- `data_files="/root/buaa/czh/Weak-Driving Learning/dataprocess/am_deepseek_r1_filtered_ad.jsonl"`
+By default, `scripts/run_ensemble.sh` reads
+`dataprocess/am_deepseek_r1_filtered_ad.jsonl` from the repository. If the
+processed file is stored elsewhere, set `TRAIN_DATA_PATH` before launching the
+pipeline:
 
-You can modify these paths if you place the processed data elsewhere.
+```bash
+export TRAIN_DATA_PATH=/path/to/am_deepseek_r1_filtered_ad.jsonl
+```
 
 4. **Configure training parameters**
 
@@ -165,13 +168,112 @@ The complete pipeline consists of the following steps:
 - Output: Final ensemble model with enhanced capabilities
 
 **Step 6: Extract Enhanced Sub-model**
-- Extracts the first sub-model (`submodel_idx=0`) from the ensemble model
+- Extracts the current/strong branch (`submodel_idx=1`) from the ensemble model;
+  in this pipeline index 0 is `stage0_m0` (base/weak) and index 1 is
+  `stage1_m1` (current/strong)
 - This sub-model contains the enhanced capabilities learned through weak-driven learning
 - **No additional inference cost**: The extracted model has the same architecture as the base model
 
 **Step 7: Evaluation**
 - Evaluates the extracted model using `eval_vllm_thinking_math.py` on reasoning tasks
 - Compares performance against standard SFT baselines
+- Uses the paper's main evaluation contract by default: thinking enabled,
+  seed 42, temperature 0, top-p 1, and one generation per problem
+
+## Standalone Evaluation
+
+The evaluator writes both per-generation predictions and an explicit protocol
+summary under the requested output directory. The paper's main evaluation is
+greedy decoding: thinking enabled, seed 42, temperature 0, top-p 1, and one
+generation per problem. For AIME2025 and AMC23, use an 8K generation budget;
+the other mathematical benchmarks use 4K.
+
+| Paper benchmark profile | `--max-input-tokens` | `--max-new-tokens` | `--max-model-len` |
+|---|---:|---:|---:|
+| AIME2025 / AMC23 | 4096 | 8192 | 12288 |
+| Other math benchmarks | 4096 | 4096 | 8192 |
+
+For example, run the main greedy evaluation on AIME2025 from the repository
+root:
+
+```bash
+python ensemble/eval_vllm_thinking_math.py \
+  --dataset dataprocess/test_dataset/aime2025/test.json \
+  --model /path/to/model-or-checkpoint \
+  --dataset-name aime2025 \
+  --tp 1 \
+  --mode greedy \
+  --temperature 0 \
+  --top-p 1 \
+  --num-samples 1 \
+  --thinking \
+  --seed 42 \
+  --max-input-tokens 4096 \
+  --max-new-tokens 8192 \
+  --max-model-len 12288 \
+  --output-dir results/my-model/aime2025-greedy
+```
+
+To measure pass@8, use eight stochastic generations per problem. The recent
+Qwen3 OPD checkpoint runs use the `opd` preset: user-only prompts, thinking
+enabled, Qwen end-token validation, temperature 0.5, top-p 1, and seed 42.
+They reserve 2K input tokens and 8K output tokens for AIME2025 and AMC23:
+
+```bash
+python ensemble/eval_vllm_thinking_math.py \
+  --dataset dataprocess/test_dataset/aime2025/test.json \
+  --model /path/to/model-or-checkpoint \
+  --dataset-name aime2025 \
+  --tp 1 \
+  --protocol opd \
+  --mode passk \
+  --temperature 0.5 \
+  --top-p 1 \
+  --num-samples 8 \
+  --thinking \
+  --seed 42 \
+  --max-input-tokens 2048 \
+  --max-new-tokens 8192 \
+  --max-model-len 10240 \
+  --dataset-sha256 de1b2907208f7e7302825a16af356e5f3782401e9c51150a46d83240e4f3db97 \
+  --grader /path/to/OPD/verl/verl/utils/reward_score/ttrl_math/__init__.py \
+  --grader-sha256 6e7f8ea703258c051e4c28379443416a485046c235196f4ee25a244c216e994c \
+  --output-dir results/my-model/aime2025-pass8-t0.5
+```
+
+MATH500 under the same OPD preset uses `4096` new tokens and a total model
+length of `5120`. AIME2025 and AMC23 both use `8192` new tokens and a total
+model length of `10240`. The external grader arguments make the scoring code
+part of the reproducibility contract. The pinned implementation is the
+[`ttrl_math` scorer from THUNLP/OPD at commit `4532fd3`](https://github.com/thunlp/OPD/tree/4532fd35ccfdde82adc918b265e4c964534e83d1/verl/verl/utils/reward_score/ttrl_math);
+keep its companion Python files in the same directory. Omit the grader only
+when intentionally using this repository's public `math-verify` scorer, and
+then pass `--allow-public-grader` to make that scorer change explicit. Run
+pass@1 separately with
+`--mode pass1 --num-samples 1 --temperature 0.1` (or `0.5`); it is not taken
+from sample zero of a pass@8 run.
+
+Use `--tp 1` for these contracts. The recent four-GPU runs used four separate
+single-GPU workers that sharded problems, rather than tensor-parallelizing one
+generation request; `--tp 4` is not an equivalent way to reproduce them.
+
+`mean@n` and `pass@n` are different metrics. `mean@n` is the accuracy averaged
+over all `n` generations, while `pass@n` is the fraction of problems for which
+at least one of the `n` generations is correct. Repeating greedy decoding at
+temperature 0 does not produce a meaningful pass@8; use the stochastic
+protocol above.
+
+The repository includes AIME2025, AMC23, AQuA, GSM8K, MAWPS, and SVAMP test
+files under `dataprocess/test_dataset/`. It does not bundle Math500. For the
+full pipeline, point `EVAL_DATA_ROOT` at an external directory with the same
+subdirectory layout, or set `EVAL_MATH500_PATH` directly:
+
+```bash
+export EVAL_DATA_ROOT=/path/to/test_dataset
+export EVAL_MATH500_PATH=/path/to/math500/test.jsonl
+export EVAL_OUTPUT_ROOT="$PWD/results"
+bash scripts/run_ensemble.sh
+```
 
 ## Project Structure
 
@@ -244,11 +346,13 @@ Weak-Driven Learning is implemented as a modular system with clear separation of
 6. **Evaluation Module** (`ensemble/eval_vllm_thinking_math.py`)
    - Evaluates models on reasoning tasks
    - Uses vLLM for efficient inference
-   - Outputs results to `results/` directory
+   - Outputs predictions and protocol metadata to `results/` by default
 
 ## Evaluation Results
 
-Evaluation results are saved to the `results/` directory (if configured in the evaluation script). Training logs are written to `logs/`.
+Evaluation results are saved to the repository's `results/` directory by
+default. Override this location with `--output-dir` for a standalone run or
+`EVAL_OUTPUT_ROOT` for the full pipeline. Training logs are written to `logs/`.
 
 Our method consistently improves performance on challenging benchmarks, including mathematical reasoning and code generation, compared to standard SFT baselines. These gains arise purely from improved optimization dynamics during training and incur **no additional inference cost**.
 

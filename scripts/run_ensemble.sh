@@ -1,13 +1,16 @@
 #!/bin/bash
 set -e  # 遇到错误立即退出
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 # ========== 环境配置 ==========
 eval "$(conda shell.bash hook)"
 # export HF_ENDPOINT="https://hf-mirror.com"
-export HF_HOME="/root/buaa/hf_cache"
+# Hugging Face uses its standard cache unless HF_HOME is supplied by the user.
 
 # ========== 日志配置 ==========
-LOG_DIR="./logs"
+LOG_DIR="${LOG_DIR:-$PROJECT_ROOT/logs}"
 mkdir -p "$LOG_DIR"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 LOG_FILE="$LOG_DIR/ensemble_${TIMESTAMP}.log"
@@ -35,11 +38,11 @@ GPU_USE=0,1,2,3,4,5,6,7
 export CUDA_VISIBLE_DEVICES=$GPU_USE
 
 # 模型和数据路径配置
-outdir="../weights/ensemble/Qwen3-8B-Base"
-base_model="Qwen/Qwen3-8B-Base"
+outdir="${OUTDIR:-$PROJECT_ROOT/weights/ensemble/Qwen3-8B-Base}"
+base_model="${BASE_MODEL:-Qwen/Qwen3-8B-Base}"
 # 默认使用本仓库 dataprocess 脚本生成的数据
-stage1_data_path="/root/buaa/czh/dataset/am_deepseek_r1_filtered_ad.jsonl"
-data_files="/root/buaa/czh/dataset/am_deepseek_r1_filtered_ad.jsonl"
+stage1_data_path="${TRAIN_DATA_PATH:-$PROJECT_ROOT/dataprocess/am_deepseek_r1_filtered_ad.jsonl}"
+data_files="${TRAIN_DATA_PATH:-$PROJECT_ROOT/dataprocess/am_deepseek_r1_filtered_ad.jsonl}"
 
 # 训练参数配置
 stage1_epochs=1
@@ -63,7 +66,7 @@ freeze=false
 stage3_name="stage3_fused_brownboost_freeze${freeze}_${model_type}"
 
 # 工作目录
-cd "$(dirname "$0")"
+cd "$SCRIPT_DIR"
 entropy_dir="$outdir/entropy"
 
 # ========== 辅助函数 ==========
@@ -195,43 +198,92 @@ echo "=========================================="
 echo "步骤 3.5: 评测 Stage 1 训练的 m1 模型"
 echo "=========================================="
 
-# 测试数据集配置
+# 论文主评测的默认协议：thinking on, seed=42, greedy (T=0, top-p=1), n=1。
+# EVAL_DATA_ROOT 可指向一个包含同名子目录的外部数据根目录。本仓库不附带 Math500，
+# 因此未提供 math500/test.jsonl 时会明确跳过该项。
+EVAL_DATA_ROOT="${EVAL_DATA_ROOT:-$PROJECT_ROOT/dataprocess/test_dataset}"
+EVAL_OUTPUT_ROOT="${EVAL_OUTPUT_ROOT:-$PROJECT_ROOT/results}"
+EVAL_MATH500_PATH="${EVAL_MATH500_PATH:-$EVAL_DATA_ROOT/math500/test.jsonl}"
 EVAL_DATASETS=(
-    "amc23|/root/buaa/czh/dataset/test_dataset/amc23/test.json|json"
-    "math500|/root/buaa/czh/dataset/test_dataset/math500/test.jsonl|jsonl"
-    "aime2025|/root/buaa/czh/dataset/test_dataset/aime2025/test.jsonl|jsonl"
-    "mawps|/root/buaa/czh/dataset/test_dataset/mawps/test.json|json"
-    "AQuA|/root/buaa/czh/dataset/test_dataset/AQuA/test.json|json"
-    "gsm8k|/root/buaa/czh/dataset/test_dataset/gsm8k/test.json|json"
-    "SVAMP|/root/buaa/czh/dataset/test_dataset/SVAMP/test.json|json"
+    "amc23|$EVAL_DATA_ROOT/amc23/test.json"
+    "math500|$EVAL_MATH500_PATH"
+    "aime2025|$EVAL_DATA_ROOT/aime2025/test.json"
+    "mawps|$EVAL_DATA_ROOT/mawps/test.json"
+    "AQuA|$EVAL_DATA_ROOT/AQuA/test.json"
+    "gsm8k|$EVAL_DATA_ROOT/gsm8k/test.json"
+    "SVAMP|$EVAL_DATA_ROOT/SVAMP/test.json"
 )
-EVAL_TP=8  # tensor parallel size for evaluation
-EVAL_REPEAT=3  # repeat times for evaluation
+EVAL_TP="${EVAL_TP:-1}"
+EVAL_MODE="greedy"
+EVAL_TEMPERATURE="0"
+EVAL_TOP_P="1"
+EVAL_NUM_SAMPLES="1"
+EVAL_SEED="42"
+EVAL_MAX_INPUT_TOKENS="4096"
+
+run_evaluation_suite() {
+    local eval_model="$1"
+    local eval_label="$2"
+    local dataset_config dataset_name dataset_path
+    local max_new_tokens max_model_len output_dir
+    local failures=0
+
+    for dataset_config in "${EVAL_DATASETS[@]}"; do
+        IFS='|' read -r dataset_name dataset_path <<< "$dataset_config"
+
+        if [ ! -f "$dataset_path" ]; then
+            echo "  ↷ 跳过 $dataset_name：找不到 $dataset_path"
+            continue
+        fi
+
+        case "$dataset_name" in
+            aime2025|amc23)
+                max_new_tokens=8192
+                max_model_len=12288
+                ;;
+            *)
+                max_new_tokens=4096
+                max_model_len=8192
+                ;;
+        esac
+
+        output_dir="$EVAL_OUTPUT_ROOT/$eval_label/$dataset_name/paper-greedy-t0-n1-seed42"
+        mkdir -p "$output_dir"
+        echo "  → 评测数据集: $dataset_name ..."
+
+        if CUDA_VISIBLE_DEVICES=$GPU_USE python "$PROJECT_ROOT/ensemble/eval_vllm_thinking_math.py" \
+            --dataset "$dataset_path" \
+            --model "$eval_model" \
+            --dataset-name "$dataset_name" \
+            --tp "$EVAL_TP" \
+            --protocol paper \
+            --mode "$EVAL_MODE" \
+            --temperature "$EVAL_TEMPERATURE" \
+            --top-p "$EVAL_TOP_P" \
+            --num-samples "$EVAL_NUM_SAMPLES" \
+            --thinking \
+            --seed "$EVAL_SEED" \
+            --max-input-tokens "$EVAL_MAX_INPUT_TOKENS" \
+            --max-new-tokens "$max_new_tokens" \
+            --max-model-len "$max_model_len" \
+            --output-dir "$output_dir"; then
+            echo "  ✓ $dataset_name 评测完成"
+        else
+            echo "⚠️  警告: 数据集 $dataset_name 评测失败"
+            failures=1
+        fi
+        echo ""
+    done
+    return "$failures"
+}
 
 conda activate verl_dev
 
 echo "开始评测 Stage 1 的 m1 模型: $m1_checkpoint"
 echo ""
 
-# for dataset_config in "${EVAL_DATASETS[@]}"; do
-#     IFS='|' read -r dataset_name dataset_path file_type <<< "$dataset_config"
-#     echo "  → 评测数据集: $dataset_name ..."
-
-#     CUDA_VISIBLE_DEVICES=$GPU_USE python ../ensemble/eval_vllm_thinking_math.py \
-#         --dataset "$dataset_path" \
-#         --model "$m1_checkpoint" \
-#         --tp $EVAL_TP \
-#         --epoch "stage1_m1" \
-#         --repeat $EVAL_REPEAT \
-#         --dataset_name "$dataset_name"
-
-#     if [ $? -ne 0 ]; then
-#         echo "⚠️  警告: 数据集 $dataset_name 评测失败"
-#     else
-#         echo "  ✓ $dataset_name 评测完成"
-#     fi
-#     echo ""
-# done
+# 如需评测 Stage 1，取消下一行注释。
+# run_evaluation_suite "$m1_checkpoint" "stage1_m1"
 
 echo "✓ Stage 1 m1 模型评测完成"
 wait_and_clear_gpu
@@ -302,10 +354,10 @@ accelerate launch \
    --freeze-first-model $freeze
 
 
-# ========== 步骤 6: 提取第一个子模型 ==========
+# ========== 步骤 6: 提取 current/strong 子模型 ==========
 echo ""
 echo "=========================================="
-echo "步骤 6: 从最终模型中提取第一个子模型"
+echo "步骤 6: 从最终模型中提取 current/strong 子模型"
 echo "=========================================="
 
 final_model_dir="$outdir/$stage3_name"
@@ -316,11 +368,11 @@ if [ -z "$final_checkpoint" ] || [ "$final_checkpoint" = "$final_model_dir" ]; t
     final_checkpoint="$final_model_dir"
 fi
 
-extracted_model_dir="$outdir/${stage3_name}_extracted_m0"
-echo "从融合模型提取第一个子模型:"
+extracted_model_dir="$outdir/${stage3_name}_extracted_m1"
+echo "从融合模型提取 current/strong 子模型:"
 echo "  - 输入模型: $final_checkpoint"
 echo "  - 输出目录: $extracted_model_dir"
-echo "  - 子模型索引: 0 (第一个模型)"
+echo "  - 子模型索引: 1 (stage1/current branch)"
 
 conda activate qwen
 python ../ensemble/extract_submodel.py \
@@ -340,46 +392,15 @@ wait_and_clear_gpu
 # ========== 步骤 7: 测试提取的模型 ==========
 echo ""
 echo "=========================================="
-echo "步骤 7: 测试提取的第一个子模型"
+echo "步骤 7: 测试提取的 current/strong 子模型"
 echo "=========================================="
-
-# 测试数据集配置（可以根据需要修改）
-EVAL_DATASETS=(
-    "amc23|/root/buaa/czh/dataset/test_dataset/amc23/test.json|json"
-    "math500|/root/buaa/czh/dataset/test_dataset/math500/test.jsonl|jsonl"
-    "aime2025|/root/buaa/czh/dataset/test_dataset/aime2025/test.jsonl|jsonl"
-    "mawps|/root/buaa/czh/dataset/test_dataset/mawps/test.json|json"
-    "AQuA|/root/buaa/czh/dataset/test_dataset/AQuA/test.json|json"
-    "gsm8k|/root/buaa/czh/dataset/test_dataset/gsm8k/test.json|json"
-    "SVAMP|/root/buaa/czh/dataset/test_dataset/SVAMP/test.json|json"
-)
-EVAL_TP=8  # tensor parallel size for evaluation
-EVAL_REPEAT=3  # repeat times for evaluation
 
 conda activate verl_dev
 
 echo "开始评测提取的模型: $extracted_model_dir"
 echo ""
 
-for dataset_config in "${EVAL_DATASETS[@]}"; do
-    IFS='|' read -r dataset_name dataset_path file_type <<< "$dataset_config"
-    echo "  → 评测数据集: $dataset_name ..."
-    
-    CUDA_VISIBLE_DEVICES=$GPU_USE python ../ensemble/eval_vllm_thinking_math.py \
-        --dataset "$dataset_path" \
-        --model "$extracted_model_dir" \
-        --tp $EVAL_TP \
-        --epoch "${stage3_name}_extracted_m0" \
-        --repeat $EVAL_REPEAT \
-        --dataset_name "$dataset_name"
-    
-    if [ $? -ne 0 ]; then
-        echo "⚠️  警告: 数据集 $dataset_name 评测失败"
-    else
-        echo "  ✓ $dataset_name 评测完成"
-    fi
-    echo ""
-done
+run_evaluation_suite "$extracted_model_dir" "${stage3_name}_extracted_m1"
 
 wait_and_clear_gpu
 
@@ -392,16 +413,15 @@ echo "模型保存位置:"
 echo "  - Stage1 (m1): $m1_checkpoint"
 echo "  - Stage0 (m0): $outdir/stage0_m0"
 echo "  - Stage3 (final): $final_checkpoint"
-echo "  - 提取的子模型 (m0): $extracted_model_dir"
+echo "  - 提取的 current/strong 子模型 (m1): $extracted_model_dir"
 echo ""
 echo "Entropy 文件:"
 echo "  - entropy_0: $entropy_0_path"
 echo "  - entropy_1: $entropy_1_path"
 echo "  - 合并 (Stage1): $entropy_merged_stage1"
 echo ""
-echo "评测结果保存在: results/ 目录下"
+echo "评测结果保存在: $EVAL_OUTPUT_ROOT"
 echo ""
 echo "结束时间: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "日志文件: $LOG_FILE"
 echo "=========================================="
-
